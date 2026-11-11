@@ -6,6 +6,7 @@ import {
   Patient,
   Doctor,
   Appointment,
+  TestCharge,
 } from "../models/index.js";
 import { TriggerEngine } from "../services/triggerEngine.js";
 
@@ -62,7 +63,31 @@ export const getLabTests = async (req, res) => {
       .populate("medicalstaff_emp_id")
       .sort({ test_date: -1 });
 
-    res.json(list);
+    const viewerNeedsPayment = ["patient", "doctor"].includes(req.user?.role);
+    const charges = list.length
+      ? await TestCharge.find({ test_id: { $in: list.map((test) => test._id) } })
+          .populate("bill_id", "status")
+      : [];
+    const paidTestIds = new Set(
+      charges
+        .filter((charge) => charge.bill_id?.status === "paid")
+        .map((charge) => String(charge.test_id)),
+    );
+
+    res.json(list.map((test) => {
+      const item = test.toObject();
+      delete item.report_file_data;
+      item.report_paid = paidTestIds.has(String(test._id));
+      if (viewerNeedsPayment && !item.report_paid) {
+        item.result = undefined;
+        item.notes = undefined;
+        item.report_file_name = undefined;
+        item.report_file_type = undefined;
+        item.technician_name = undefined;
+        item.completedAt = undefined;
+      }
+      return item;
+    }));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -177,7 +202,7 @@ export const submitLabResult = async (req, res) => {
           message: "Only laboratory technicians can submit test results",
         });
     }
-    const { result, notes } = req.body;
+    const { result, notes, reportFile } = req.body;
 
     // RUN TRIGGER 14: Check that staff is a qualified Lab Technician
     const test = await LabTest.findById(req.params.id);
@@ -187,9 +212,48 @@ export const submitLabResult = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Cancelled tests cannot receive a result" });
-    if (!result?.trim())
-      return res.status(400).json({ message: "Enter a laboratory result" });
-    test.result = result;
+    const writtenResult = typeof result === "string" ? result.trim() : "";
+    if (writtenResult.length > 20000) {
+      return res.status(400).json({ message: "Written result must be 20,000 characters or fewer" });
+    }
+
+    let validatedFile = null;
+    if (reportFile) {
+      const match = typeof reportFile.dataUrl === "string"
+        ? reportFile.dataUrl.match(/^data:(application\/pdf|image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/)
+        : null;
+      if (!match) {
+        return res.status(400).json({ message: "Upload a valid PNG, JPG, WEBP, or PDF report" });
+      }
+      const [, mimeType, encoded] = match;
+      const fileBytes = Buffer.from(encoded, "base64");
+      if (!fileBytes.length || fileBytes.length > 8 * 1024 * 1024) {
+        return res.status(400).json({ message: "Report files must be 8 MB or smaller" });
+      }
+      const validSignature = mimeType === "application/pdf"
+        ? fileBytes.subarray(0, 5).toString("ascii") === "%PDF-"
+        : mimeType === "image/png"
+          ? fileBytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+          : mimeType === "image/jpeg"
+            ? fileBytes[0] === 0xff && fileBytes[1] === 0xd8 && fileBytes[2] === 0xff
+            : fileBytes.subarray(0, 4).toString("ascii") === "RIFF" && fileBytes.subarray(8, 12).toString("ascii") === "WEBP";
+      if (!validSignature) {
+        return res.status(400).json({ message: "The uploaded file does not match its declared image or PDF type" });
+      }
+      const fileName = String(reportFile.name || "lab-report")
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .slice(0, 120);
+      validatedFile = { fileName, mimeType, encoded };
+    }
+    if (!writtenResult && !validatedFile) {
+      return res.status(400).json({ message: "Enter a written result or upload an image/PDF report" });
+    }
+    test.result = writtenResult;
+    if (validatedFile) {
+      test.report_file_name = validatedFile.fileName;
+      test.report_file_type = validatedFile.mimeType;
+      test.report_file_data = validatedFile.encoded;
+    }
     test.status = "completed";
     test.completedAt = new Date();
     test.technician_name = req.user.name;
@@ -197,10 +261,13 @@ export const submitLabResult = async (req, res) => {
 
     await test.save();
 
+    const safeTest = test.toObject();
+    delete safeTest.report_file_data;
+
     res.json({
       message:
-        "Lab test results successfully updated and submitted to consulting doctor.",
-      test,
+        "Lab report submitted. The patient and doctor can view it after the test charge is paid.",
+      test: safeTest,
     });
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -246,6 +313,16 @@ export const getLabReport = async (req, res) => {
         .json({ message: "You can only view reports for your patients" });
     }
 
+    const testCharge = await TestCharge.findOne({ test_id: test._id })
+      .populate("bill_id", "status");
+    const reportPaid = testCharge?.bill_id?.status === "paid";
+    if (["patient", "doctor"].includes(req.user?.role) && !reportPaid) {
+      return res.status(402).json({ message: "This lab report will be available after its charge is paid." });
+    }
+    if (test.status !== "completed") {
+      return res.status(409).json({ message: "The laboratory has not submitted this report yet." });
+    }
+
     res.json({
       institution:
         "Maulana Azad National Institute of Technology (MANIT) Bhopal",
@@ -264,7 +341,14 @@ export const getLabReport = async (req, res) => {
       gender: test.patient_id?.gender || test.patient?.gender,
       referringDoctor: test.doctor_emp_id?.name || test.doctor?.name,
       testName: test.testName,
-      result: test.result || "Pending Analysis",
+      result: test.result || (test.report_file_data ? "See attached uploaded report" : "Pending Analysis"),
+      reportFile: test.report_file_data
+        ? {
+            name: test.report_file_name,
+            type: test.report_file_type,
+            dataUrl: `data:${test.report_file_type};base64,${test.report_file_data}`,
+          }
+        : null,
       normalRange: test.normal_range || "N/A",
       status: test.status,
       technician:

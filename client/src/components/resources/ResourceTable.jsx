@@ -10,8 +10,8 @@ function ResourceTable({
   canDelete,
 }) {
   return (
-    <div className="table-wrap">
-      <table>
+    <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <table className="w-full text-left text-sm">
         <thead>
           <tr>
             <th>
@@ -44,7 +44,7 @@ function ResourceTable({
               {c.fields.slice(0, 6).map((f) => (
                 <td key={f}>
                   {f === "is_available" ? (
-                    <span className={`status-pill ${r.is_available !== false ? "available" : "occupied"}`}>
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${r.is_available !== false ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
                       {r.is_available !== false ? "Available" : "Not Available"}
                     </span>
                   ) : typeof r[f] === "object" && r[f] ? (
@@ -58,7 +58,7 @@ function ResourceTable({
               <td>
                 {canDelete && (
                   <button
-                    className="delete-btn"
+                    className="inline-flex items-center justify-center rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
                     onClick={() => deleteOne(r._id)}
                   >
                     Delete
@@ -70,7 +70,7 @@ function ResourceTable({
 
           {filteredRows.length === 0 && (
             <tr>
-              <td colSpan={c.fields.slice(0, 6).length + 2} className="empty">
+              <td colSpan={c.fields.slice(0, 6).length + 2} className="px-5 py-14 text-center text-sm text-slate-500">
                 {q
                   ? "No records match your search."
                   : "No records yet. Use “Add New” to create one."}

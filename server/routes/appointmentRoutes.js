@@ -13,7 +13,7 @@ const router = express.Router();
 router.get(
   "/",
   auth,
-  roles("admin", "doctor", "nurse", "receptionist", "accountant", "patient"),
+  roles("admin", "doctor", "receptionist", "patient"),
   getAppointments,
 );
 router.post(
@@ -32,7 +32,7 @@ router.get("/doctor/:doctorId/availability", auth, getDoctorAvailability);
 router.get(
   "/:id/slip",
   auth,
-  roles("admin", "doctor", "nurse", "receptionist", "accountant", "patient"),
+  roles("admin", "doctor", "receptionist", "patient"),
   getAppointmentSlip,
 );
 

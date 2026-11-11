@@ -75,7 +75,15 @@ export const getAppointments = async (req, res) => {
       .populate("doctor")
       .sort({ appointment_date: -1, start_time: 1 });
 
-    res.json(list);
+    const charges = await AppointmentCharge.find({ appointment_id: { $in: list.map((item) => item._id) } }).select("appointment_id bill_id");
+    const billByAppointment = new Map(charges.map((charge) => [String(charge.appointment_id), charge.bill_id]));
+    const billIds = [...new Set(charges.map((charge) => String(charge.bill_id)))];
+    const billList = billIds.length ? await Bill.find({ _id: { $in: billIds } }).select("total_amount total amount_paid") : [];
+    const billDueById = new Map(billList.map((bill) => [String(bill._id), Math.max(0, Number(bill.total_amount || bill.total || 0) - Number(bill.amount_paid || 0))]));
+    res.json(list.map((item) => {
+      const billId = item.payment_bill_id || billByAppointment.get(String(item._id));
+      return { ...item.toObject(), payment_bill_id: billId, payment_bill_amount_due: billId ? billDueById.get(String(billId)) : undefined };
+    }));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -179,8 +187,6 @@ export const createAppointment = async (req, res) => {
       start_time,
       reason,
       payment_method,
-      payment_reference,
-      payment_confirmed,
       payment_amount,
     } = req.body;
 
@@ -254,9 +260,8 @@ export const createAppointment = async (req, res) => {
       docRecord.consultation_fee ?? docRecord.consultationFee ?? 500;
     const payingCashAtReception = payment_method === "Cash";
     if (
-      !["UPI", "Card", "Cash"].includes(payment_method) ||
-      Number(payment_amount) !== Number(consultationFee) ||
-      (!payingCashAtReception && payment_confirmed !== true)
+      !["Razorpay", "Cash"].includes(payment_method) ||
+      Number(payment_amount) !== Number(consultationFee)
     ) {
       return res.status(402).json({
         message: `Pay the consultation fee of ₹${consultationFee} before confirming this appointment`,
@@ -322,21 +327,24 @@ export const createAppointment = async (req, res) => {
       status: "scheduled",
       reason: reason || "General Consultation",
       consultation_fee: consultationFee,
-      payment_status: payingCashAtReception ? "pending" : "paid",
+      payment_status: "pending",
       payment_method,
-      payment_reference: payingCashAtReception
-        ? ""
-        : payment_reference || `DEMO-${Date.now()}`,
+      payment_reference: "",
     });
 
     // RUN TRIGGER 10: Automatically add consultation charge to patient bill
     await TriggerEngine.addAppointmentCharge(newAppointment);
+    const appointmentCharge = await AppointmentCharge.findOne({ appointment_id: newAppointment._id });
+    if (appointmentCharge?.bill_id) {
+      newAppointment.payment_bill_id = appointmentCharge.bill_id;
+      await newAppointment.save();
+    }
 
     const populated = await Appointment.findById(newAppointment._id)
       .populate("patient_id")
       .populate("doctor_emp_id");
 
-    res.status(201).json(populated);
+    res.status(201).json({ ...populated.toObject(), payment_bill_id: appointmentCharge?.bill_id || undefined });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }

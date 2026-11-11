@@ -221,12 +221,11 @@ export const login = async (req, res) => {
       u.patient_id = patient._id;
       await u.save();
     } else if (u.role === "doctor" && !u.emp_id) {
-      let doc = await Doctor.findOne({ email: u.email });
-      // Older demo databases created a generic doctor login without linking it
-      // to the doctor record that owns its appointments.
-      if (!doc && u.email === "doctor@his.local") {
-        doc = await Doctor.findOne().sort({ createdAt: 1 });
-      }
+      // Repair older accounts only from a matching doctor email or exact name;
+      // never attach a login to an arbitrary doctor's schedule.
+      const doc = await Doctor.findOne({
+        $or: [{ email: u.email }, { name: u.name }],
+      });
       if (doc) {
         u.emp_id = doc._id;
         await u.save();

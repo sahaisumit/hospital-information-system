@@ -76,8 +76,35 @@ export const getDashboard = async (req, res) => {
 
     const revenue = billsAggregation[0]?.totalRevenue || 0;
 
-    if (["doctor", "patient"].includes(role)) {
-      return res.json({ appointments: scheduledAppointments });
+    if (role === "patient") return res.json({ appointments: scheduledAppointments });
+    if (role === "doctor") {
+      return res.json({
+        appointments: scheduledAppointments,
+        patients: totalPatients,
+        opdPatients,
+        ipdPatients,
+        doctors: totalDoctors,
+        availableBeds: availableRooms,
+        occupiedBeds: occupiedRooms,
+        icuAvailable,
+      });
+    }
+    if (role === "nurse") {
+      return res.json({
+        patients: totalPatients,
+        opdPatients,
+        ipdPatients,
+        availableBeds: availableRooms,
+        occupiedBeds: occupiedRooms,
+        icuAvailable,
+        activeNurses: activeNursesCount,
+      });
+    }
+    if (role === "pharmacist") return res.json({ lowStock: lowStockMeds, expiringMedicines: expiringMeds });
+    if (role === "lab") return res.json({});
+    if (role === "accountant") return res.json({ revenue, pendingBills: pendingBillsCount });
+    if (role === "receptionist") {
+      return res.json({ patients: totalPatients, opdPatients, ipdPatients, doctors: totalDoctors, appointments: scheduledAppointments, pendingBills: pendingBillsCount });
     }
 
     res.json({
@@ -96,13 +123,6 @@ export const getDashboard = async (req, res) => {
       activeNurses: activeNursesCount,
       institution:
         "Maulana Azad National Institute of Technology (MANIT) Bhopal",
-      mentors: ["Dr. Jay Kumar Jain", "Dr. Kuldeep Singh Yadav"],
-      team: [
-        { name: "Nikita Patidar", roll: "25204031132" },
-        { name: "Akarshan Pathak", roll: "25204031107" },
-        { name: "Sumit Sahai", roll: "25204031124" },
-        ,
-      ],
     });
   } catch (error) {
     console.error("GET /api/dashboard failed:", error);

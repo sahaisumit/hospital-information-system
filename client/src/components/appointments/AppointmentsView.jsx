@@ -2,6 +2,10 @@ import React, { useState, useEffect } from "react";
 import { CalendarDays, Clock, Plus, Printer, CheckCircle, AlertTriangle, User, Stethoscope, ShieldCheck, XCircle } from "lucide-react";
 import { api } from "../../lib/api";
 import PrintModal from "../common/PrintModal";
+import { useNavigate } from "react-router-dom";
+import Pagination from "../common/Pagination";
+import useListPagination from "../../hooks/useListPagination";
+import { payBillWithRazorpay } from "../../lib/razorpay";
 
 const todayLocal = () => {
   const today = new Date();
@@ -9,6 +13,7 @@ const todayLocal = () => {
 };
 
 export default function AppointmentsView() {
+  const navigate = useNavigate();
   const [appointments, setAppointments] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [patients, setPatients] = useState([]);
@@ -20,13 +25,19 @@ export default function AppointmentsView() {
   const [selectedDoctor, setSelectedDoctor] = useState("");
   const [selectedPatient, setSelectedPatient] = useState("");
   const [selectedDate, setSelectedDate] = useState(todayLocal);
-  const [selectedSlot, setSelectedSlot] = useState("10:00");
+  const [selectedSlot, setSelectedSlot] = useState("");
   const [reason, setReason] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("UPI");
+  const [paymentMethod, setPaymentMethod] = useState("Razorpay");
+  const [payingAppointment, setPayingAppointment] = useState(false);
   const [cashAppointment, setCashAppointment] = useState(null);
   const [cashAmount, setCashAmount] = useState("");
   const [cashReceipt, setCashReceipt] = useState("");
   const [availability, setAvailability] = useState(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
+  const [appointmentSearch, setAppointmentSearch] = useState("");
+  const [doctorDepartmentFilter, setDoctorDepartmentFilter] = useState("");
+  const [doctorSpecialtyFilter, setDoctorSpecialtyFilter] = useState("");
 
   // Print slip state
   const [printDoc, setPrintDoc] = useState(null);
@@ -36,6 +47,16 @@ export default function AppointmentsView() {
   const isPatient = user.role === "patient";
   const canBook = ["patient", "receptionist", "admin"].includes(user.role);
   const canCollectCash = ["admin", "receptionist", "accountant"].includes(user.role);
+  const isDoctor = user.role === "doctor";
+  const filteredAppointments = appointments.filter((a) => {
+    const d = a.doctor_emp_id || a.doctor || {};
+    const patientName = a.patient_id?.name || a.patient?.name || "";
+    const query = appointmentSearch.trim().toLowerCase();
+    return (!query || [a.appointment_id, patientName, d.name, a.reason, a.status].some((value) => String(value || "").toLowerCase().includes(query)))
+      && (!doctorDepartmentFilter || d.department === doctorDepartmentFilter)
+      && (!doctorSpecialtyFilter || d.specialization === doctorSpecialtyFilter);
+  });
+  const appointmentPagination = useListPagination(filteredAppointments);
 
   useEffect(() => {
     loadData();
@@ -74,11 +95,38 @@ export default function AppointmentsView() {
 
   // Check doctor availability when doctor or date changes
   useEffect(() => {
-    if (selectedDoctor && selectedDate) {
-      api(`/appointment-ops/doctor/${selectedDoctor}/availability?date=${selectedDate}`)
-        .then((data) => setAvailability(data))
-        .catch(() => setAvailability(null));
+    if (!selectedDoctor || !selectedDate) {
+      setAvailability(null);
+      setSelectedSlot("");
+      setAvailabilityLoading(false);
+      return undefined;
     }
+
+    let currentRequest = true;
+    setAvailability(null);
+    setAvailabilityError("");
+    setAvailabilityLoading(true);
+    setSelectedSlot("");
+
+    api(`/appointment-ops/doctor/${selectedDoctor}/availability?date=${encodeURIComponent(selectedDate)}`)
+      .then((data) => {
+        if (!currentRequest) return;
+        setAvailability(data);
+        const firstAvailable = data.slots?.find((slot) => slot.available)?.start_time || "";
+        setSelectedSlot(firstAvailable);
+      })
+      .catch((error) => {
+        if (!currentRequest) return;
+        setAvailability(null);
+        setAvailabilityError(error.message || "Could not load appointment times. Please try again.");
+      })
+      .finally(() => {
+        if (currentRequest) setAvailabilityLoading(false);
+      });
+
+    return () => {
+      currentRequest = false;
+    };
   }, [selectedDoctor, selectedDate]);
 
   const selectedDoctorObj = doctors.find((d) => d._id === selectedDoctor);
@@ -102,10 +150,8 @@ export default function AppointmentsView() {
         appointment_date: selectedDate,
         start_time: selectedSlot,
         reason: reason || "General Outpatient Consultation",
-        payment_confirmed: paymentMethod !== "Cash",
         payment_amount: consultationFee,
         payment_method: paymentMethod,
-        ...(paymentMethod === "Cash" ? {} : { payment_reference: `DEMO-${Date.now()}` }),
       };
 
       const result = await api("/appointment-ops", {
@@ -113,17 +159,38 @@ export default function AppointmentsView() {
         body: JSON.stringify(payload),
       });
 
-      setSuccess(paymentMethod === "Cash"
-        ? `Appointment ${result.appointment_id} reserved. Collect ₹${result.consultation_fee} at reception before the visit.`
-        : `Payment recorded and appointment ${result.appointment_id} confirmed. Consultation fee: ₹${result.consultation_fee}.`);
       setShowModal(false);
       setReason("");
-      loadData();
+      if (paymentMethod === "Razorpay") {
+        if (!result.payment_bill_id) throw new Error("Appointment was reserved, but its invoice was not created. Open Billing to complete payment.");
+        await payBillWithRazorpay(result.payment_bill_id, "Doctor consultation fee");
+        setSuccess(`Payment verified. Appointment ${result.appointment_id} is confirmed.`);
+      } else {
+        setSuccess(`Appointment ${result.appointment_id} reserved. Collect ₹${result.consultation_fee} at reception before the visit.`);
+      }
+      await loadData();
 
       // Open print slip automatically
       handlePrintSlip(result._id);
     } catch (err) {
       setError(err.message);
+      await loadData();
+    }
+  };
+
+  const handleAppointmentPayment = async (appointment) => {
+    if (!appointment.payment_bill_id || payingAppointment) return;
+    setError("");
+    setPayingAppointment(true);
+    try {
+      await payBillWithRazorpay(appointment.payment_bill_id, "Doctor consultation fee");
+      setSuccess(`Payment verified. Appointment ${appointment.appointment_id} is confirmed.`);
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+      await loadData();
+    } finally {
+      setPayingAppointment(false);
     }
   };
 
@@ -157,28 +224,33 @@ export default function AppointmentsView() {
   };
 
   return (
-    <div className="module-container">
-      <div className="module-header">
+    <div className="mx-auto w-full max-w-screen-2xl pb-10 mx-auto w-full max-w-screen-2xl">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 mb-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div>
           <h2>
             {isPatient ? "My Consultations & Appointments" : "Appointment Scheduling & Doctor Slots"}
           </h2>
-          <p className="sub-text">
+          <p className="mt-1 max-w-3xl text-sm text-slate-600">
             {isPatient
               ? "Book 30-minute consultation slots with your preferred specialist doctor and view confirmation slips."
               : "30-minute time-slot consultations with doctor schedule conflict prevention and daily quota enforcement (Max 20/day)."}
           </p>
         </div>
-        {canBook && <button className="btn-primary" onClick={() => setShowModal(true)}>
+        {canBook && <button className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setShowModal(true)}>
           <Plus size={16} /> {isPatient ? "Book My Appointment" : "Book Appointment"}
         </button>}
       </div>
 
-      {error && <div className="alert-banner alert-danger"><AlertTriangle size={18} /> {error}</div>}
-      {success && <div className="alert-banner alert-success"><CheckCircle size={18} /> {success}</div>}
+      {error && <div className="my-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm border-red-200 bg-red-50 text-red-700"><AlertTriangle size={18} /> {error}</div>}
+      {success && <div className="my-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm border-emerald-200 bg-emerald-50 text-emerald-700"><CheckCircle size={18} /> {success}</div>}
 
       {/* Appointments List Table */}
-      <div className="table-wrap">
+      <div className="mb-3 flex flex-wrap gap-2">
+        <input className="min-w-[220px] flex-1" placeholder="Search appointments, patients, doctors..." value={appointmentSearch} onChange={(e) => setAppointmentSearch(e.target.value)}/>
+        <select className="w-auto" value={doctorDepartmentFilter} onChange={(e) => setDoctorDepartmentFilter(e.target.value)}><option value="">All departments</option>{[...new Set(doctors.map((d) => d.department).filter(Boolean))].sort().map((d) => <option key={d} value={d}>{d}</option>)}</select>
+        <select className="w-auto" value={doctorSpecialtyFilter} onChange={(e) => setDoctorSpecialtyFilter(e.target.value)}><option value="">All specialisations</option>{[...new Set(doctors.map((d) => d.specialization).filter(Boolean))].sort().map((s) => <option key={s} value={s}>{s}</option>)}</select>
+      </div>
+      <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table>
           <thead>
             <tr>
@@ -194,45 +266,48 @@ export default function AppointmentsView() {
             </tr>
           </thead>
           <tbody>
-            {appointments.map((a) => (
+            {appointmentPagination.pageItems.map((a) => (
               <tr key={a._id}>
                 <td><strong>{a.appointment_id || a._id.slice(-6)}</strong></td>
                 <td>
                   {a.patient_id?.name || a.patient?.name || (isPatient ? user.name : "Patient")}
-                  {isPatient && <small className="text-muted block"> (You)</small>}
+                  {isPatient && <small className="text-slate-500 block"> (You)</small>}
                 </td>
                 <td>{a.doctor_emp_id?.name || a.doctor?.name || "Doctor"}</td>
                 <td>{new Date(a.appointment_date || a.date).toLocaleDateString()}</td>
                 <td>
-                  <span className="badge-time">
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-700">
                     <Clock size={13} /> {a.start_time || "10:00"} - {a.end_time || "10:30"}
                   </span>
                 </td>
                 <td>
-                  <span className={`status-pill ${a.status}`}>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${a.status === "completed" || a.status === "attended" ? "bg-emerald-50 text-emerald-700" : a.status === "cancelled" ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>
                     {a.status?.toUpperCase()}
                   </span>
                 </td>
-                <td>₹{a.consultation_fee || 500}</td>
-                <td><span className={`status-pill ${a.payment_status === "paid" ? "available" : "primary"}`}>{a.payment_status === "paid" ? "PAID" : `DUE${a.payment_method === "Cash" ? " · CASH" : ""}`}</span></td>
+                <td>₹{a.consultation_fee ?? 500}</td>
+                <td><span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${a.payment_status === "paid" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}>{a.payment_status === "paid" ? "PAID" : `DUE${a.payment_method === "Cash" ? " · CASH" : ""}`}</span></td>
                 <td>
-                  <div style={{ display: "flex", gap: "6px" }}>
+                  <div className="flex gap-1.5">
                   <button
                     type="button"
-                    className="action-btn-sm"
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700"
                     title="Print Confirmation Slip"
                     onClick={() => handlePrintSlip(a._id)}
                   >
                     <Printer size={15} /> Slip
                   </button>
-                  {canCollectCash && a.payment_method === "Cash" && a.payment_status !== "paid" && <button type="button" className="btn-primary-sm" onClick={() => { setCashAppointment(a); setCashAmount(String(a.consultation_fee || 500)); setCashReceipt(""); }}>Record cash</button>}
+                  {canCollectCash && a.payment_method === "Cash" && a.payment_status !== "paid" && <button type="button" className="inline-flex items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50" onClick={() => { setCashAppointment(a); setCashAmount(String(a.consultation_fee || 500)); setCashReceipt(""); }}>Record cash</button>}
+                  {a.payment_method !== "Cash" && a.payment_status !== "paid" && a.payment_bill_id && <button type="button" disabled={payingAppointment} className="inline-flex items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50" onClick={() => handleAppointmentPayment(a)}>{payingAppointment ? "Opening…" : `Pay invoice ₹${Number(a.payment_bill_amount_due || 0).toLocaleString()}`}</button>}
+                  {isDoctor && a.status === "scheduled" && a.payment_status === "paid" && <button type="button" className="inline-flex items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50" onClick={() => navigate("/prescriptions", { state: { appointmentId: a._id } })}>Write prescription</button>}
+                  {isDoctor && String(a.reason || "").startsWith("Doctor referral from") && <button type="button" className="inline-flex items-center justify-center gap-1 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800" onClick={() => navigate("/beds", { state: { patientId: a.patient_id?._id || a.patient?._id || a.patient_id } })}>Admit patient</button>}
                   </div>
                 </td>
               </tr>
             ))}
-            {appointments.length === 0 && (
+            {filteredAppointments.length === 0 && (
               <tr>
-                <td colSpan="9" className="empty">
+                <td colSpan="9" className="px-5 py-14 text-center text-sm text-slate-500">
                   {isPatient
                     ? "You have no appointments scheduled. Click 'Book My Appointment' above to schedule one!"
                     : "No appointments scheduled yet."}
@@ -242,27 +317,28 @@ export default function AppointmentsView() {
           </tbody>
         </table>
       </div>
+      <div className="overflow-hidden rounded-b-2xl border border-t-0 border-slate-200 bg-white"><Pagination {...appointmentPagination} onPageChange={appointmentPagination.setPage} onPageSizeChange={appointmentPagination.setPageSize}/></div>
 
       {/* BOOK APPOINTMENT MODAL */}
       {showModal && (
-        <div className="modal">
-          <form className="modal-card" onSubmit={handleBookAppointment}>
-            <div className="modal-head">
+        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm">
+          <form className="my-auto grid max-h-[90vh] w-full max-w-xl content-start gap-4 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl max-h-[90vh] content-start scroll-pt-3" onSubmit={handleBookAppointment}>
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white pb-3 pt-3">
               <h2>{isPatient ? "Book Your Doctor Consultation" : "Book Consultation Slot "}</h2>
-              <button type="button" className="close-btn" onClick={() => setShowModal(false)}>×</button>
+              <button type="button" className="rounded-md p-2 text-xl text-slate-500 hover:bg-slate-100" onClick={() => setShowModal(false)}>×</button>
             </div>
 
             {/* PATIENT SELECTION: Locked to current user if patient */}
             {isPatient ? (
-              <div className="patient-preselected-card">
-                <div className="preselected-avatar">
+              <div className="mb-3 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+                <div className="grid h-9 w-9 place-items-center rounded-full bg-blue-600 text-sm font-bold text-white">
                   {user.name?.[0]?.toUpperCase() || "P"}
                 </div>
                 <div>
-                  <div className="preselected-name">
+                  <div className="text-sm text-slate-800">
                     <strong>{user.name}</strong> (Self Booking)
                   </div>
-                  <small className="preselected-meta">
+                  <small className="block text-xs text-slate-500">
                     Email: {user.email} • ID: {user.patient_id ? "PAT-" + user.patient_id.slice(-4) : "Registered Patient"}
                   </small>
                 </div>
@@ -305,7 +381,7 @@ export default function AppointmentsView() {
 
             {/* DOCTOR AVAILABILITY WARNING BANNER */}
             {!isDoctorAvailable && (
-              <div className="alert-banner alert-danger">
+              <div className="my-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm border-red-200 bg-red-50 text-red-700">
                 <XCircle size={18} />
                 <div>
                   <strong>Doctor is currently Not Available:</strong>{" "}
@@ -316,7 +392,7 @@ export default function AppointmentsView() {
             )}
 
             {isDoctorAvailable && (
-              <div className="alert-banner alert-success" style={{ padding: "8px 12px", fontSize: "13px" }}>
+              <div className="my-3 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">
                 <ShieldCheck size={16} />
                 <span>
                   Dr. {selectedDoctorObj?.name} is <strong>Available</strong> ({selectedDoctorObj?.status_note || "On Duty"}).
@@ -337,10 +413,10 @@ export default function AppointmentsView() {
 
             {/* Doctor Daily Quota Info (Trigger 9) */}
             {availability && isDoctorAvailable && (
-              <div className="quota-indicator">
+              <div className="my-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                 <strong>Doctor Daily Quota:</strong> {availability.totalBooked} / {availability.maxAllowed} booked on this date.
                 {availability.totalBooked >= 20 && (
-                  <span className="text-danger"> Limit reached for this doctor on this day.</span>
+                  <span className="text-red-700"> Limit reached for this doctor on this day.</span>
                 )}
               </div>
             )}
@@ -348,21 +424,25 @@ export default function AppointmentsView() {
             {/* 30-Minute Time Slot Picker */}
             <label>
               Select 30-Min Time Slot (Conflict Prevention)
-              <div className="slots-grid">
+              <div className="mt-2 flex flex-wrap gap-2">
                 {availability?.slots?.map((slot) => (
                   <button
                     type="button"
                     key={slot.start_time}
-                    className={`slot-chip ${selectedSlot === slot.start_time ? "selected" : ""} ${!slot.available ? "unavailable" : ""}`}
-                    disabled={!slot.available || !isDoctorAvailable}
+                    aria-pressed={selectedSlot === slot.start_time}
+                    title={slot.available ? `Select ${slot.start_time}` : `${slot.start_time} is already booked`}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${selectedSlot === slot.start_time ? "border-blue-700 bg-blue-700 text-white shadow-sm" : "border-slate-300 bg-white text-slate-800 hover:border-blue-500 hover:bg-blue-50"} ${!slot.available || !isDoctorAvailable ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70 hover:bg-slate-100" : "cursor-pointer"}`}
+                    disabled={availabilityLoading || !slot.available || !isDoctorAvailable}
                     onClick={() => setSelectedSlot(slot.start_time)}
                   >
                     {slot.start_time}
                   </button>
                 ))}
-                {!availability && (
+                {availabilityLoading && (
                   <small>Loading available consultation slots...</small>
                 )}
+                {availabilityError && <small className="text-red-700">{availabilityError}</small>}
+                {availability && isDoctorAvailable && !availabilityLoading && !availability.slots?.some((slot) => slot.available) && <small className="text-amber-700">No appointment times are available on this date. Select another date or doctor.</small>}
               </div>
             </label>
 
@@ -376,30 +456,29 @@ export default function AppointmentsView() {
               />
             </label>
 
-            <div className="discharge-info-box">
+            <div className="my-4 space-y-2 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-slate-700">
               <strong>Consultation charge: ₹{selectedDoctorObj?.consultation_fee ?? selectedDoctorObj?.consultationFee ?? 500}</strong>
               <p>Payment is required before the appointment is confirmed.</p>
               <label>
                 Payment method
                 <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} required>
-                  <option value="UPI">UPI</option>
-                  <option value="Card">Card</option>
+                  <option value="Razorpay">Razorpay · UPI, card &amp; netbanking</option>
                   <option value="Cash">Cash at reception</option>
                 </select>
               </label>
               {paymentMethod === "Cash"
                 ? <small>The appointment stays unpaid until reception or accounts records the cash receipt.</small>
-                : <small>This project records a demo payment confirmation; no bank or payment gateway is connected.</small>}
+                : <small>Checkout opens securely through Razorpay. The appointment is confirmed only after payment verification.</small>}
             </div>
 
-            <div className="modal-actions">
-              <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+              <button type="button" className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200" onClick={() => setShowModal(false)}>
                 Cancel
               </button>
               <button
                 type="submit"
-                className="btn-primary"
-                disabled={!isDoctorAvailable || !availability || availability.totalBooked >= 20 || !availability.slots?.some((slot) => slot.start_time === selectedSlot && slot.available)}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={availabilityLoading || !isDoctorAvailable || !availability || availability.totalBooked >= 20 || !availability.slots?.some((slot) => slot.start_time === selectedSlot && slot.available)}
               >
                 {paymentMethod === "Cash" ? "Reserve and pay at reception" : `Pay ₹${selectedDoctorObj?.consultation_fee ?? selectedDoctorObj?.consultationFee ?? 500} & Confirm`}
               </button>
@@ -409,13 +488,13 @@ export default function AppointmentsView() {
       )}
 
       {cashAppointment && (
-        <div className="modal">
-          <form className="modal-card" onSubmit={handleCashPayment}>
-            <div className="modal-head">
+        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm">
+          <form className="my-auto grid max-h-[90vh] w-full max-w-xl content-start gap-4 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onSubmit={handleCashPayment}>
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white pb-3 pt-3">
               <h2>Record cash consultation payment</h2>
-              <button type="button" className="close-btn" onClick={() => setCashAppointment(null)}>×</button>
+              <button type="button" className="rounded-md p-2 text-xl text-slate-500 hover:bg-slate-100" onClick={() => setCashAppointment(null)}>×</button>
             </div>
-            <div className="discharge-info-box">
+            <div className="my-4 space-y-2 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-slate-700">
               <p><strong>Appointment:</strong> {cashAppointment.appointment_id}</p>
               <p><strong>Patient:</strong> {cashAppointment.patient_id?.name || cashAppointment.patient?.name || "Patient"}</p>
               <p><strong>Amount due:</strong> ₹{cashAppointment.consultation_fee || 500}</p>
@@ -426,9 +505,9 @@ export default function AppointmentsView() {
             <label>Cash receipt number
               <input value={cashReceipt} onChange={(e) => setCashReceipt(e.target.value)} placeholder="Enter the receipt issued at reception" required />
             </label>
-            <div className="modal-actions">
-              <button type="button" className="btn-secondary" onClick={() => setCashAppointment(null)}>Cancel</button>
-              <button type="submit" className="btn-primary">Confirm cash received</button>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+              <button type="button" className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200" onClick={() => setCashAppointment(null)}>Cancel</button>
+              <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Confirm cash received</button>
             </div>
           </form>
         </div>

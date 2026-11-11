@@ -318,7 +318,7 @@ export const TriggerEngine = {
   // Trigger 10: trg_add_appointment_charge (After Insert)
   async addAppointmentCharge(appointmentDoc) {
     let bill;
-    if (appointmentDoc.payment_status === "paid" || appointmentDoc.payment_method === "Cash") {
+    if (appointmentDoc.payment_status === "paid" || ["Cash", "Razorpay"].includes(appointmentDoc.payment_method)) {
       const billCount = await Bill.countDocuments();
       bill = await Bill.create({
         bill_id: `INV-${String(billCount + 1001).padStart(4, "0")}`,
@@ -396,9 +396,55 @@ export const TriggerEngine = {
     }
   },
 
-  // Trigger 13: trg_reduce_stock & Add Medicine Charge (After Dispense)
-  async reduceStockAndCharge(prescriptionDoc, pharmacyId, itemsToDispense) {
+  // Add the prescription's medicine charges to the patient's current bill.
+  async addPrescriptionCharges(prescriptionDoc) {
+    const existingCharges = await MedicineCharge.find({ pres_id: prescriptionDoc._id });
+    if (existingCharges.length) {
+      return this.recalculateBill(existingCharges[0].bill_id);
+    }
+
     const bill = await this.getOrCreatePendingBill(prescriptionDoc.patient_id);
+    for (const item of prescriptionDoc.medicines || []) {
+      if (!item.med_id) continue;
+      const med = await Medicine.findById(item.med_id);
+      if (!med) throw new Error("Medicine not found in catalog");
+
+      const chargeCount = await MedicineCharge.countDocuments();
+      const quantity = Number(item.quantity || 1);
+      const unitPrice = Number(item.unit_price ?? med.unit_price ?? med.unitPrice ?? 10);
+      await MedicineCharge.create({
+        charge_id: `MC-${String(chargeCount + 1001).padStart(4, "0")}`,
+        bill_id: bill._id,
+        pres_id: prescriptionDoc._id,
+        med_id: med._id,
+        medicine_name: item.name || med.name,
+        quantity,
+        amount: unitPrice * quantity,
+      });
+    }
+
+    await this.recalculateBill(bill._id);
+    return bill;
+  },
+
+  async syncPrescriptionCharges(prescriptionDoc) {
+    const previousCharges = await MedicineCharge.find({ pres_id: prescriptionDoc._id });
+    const affectedBillIds = [...new Set(previousCharges.map((charge) => String(charge.bill_id)))];
+    if (previousCharges.length) {
+      await MedicineCharge.deleteMany({ pres_id: prescriptionDoc._id });
+      for (const billId of affectedBillIds) await this.recalculateBill(billId);
+    }
+    return this.addPrescriptionCharges(prescriptionDoc);
+  },
+
+  // Trigger 13: Reduce inventory after dispense; the prescription charge was
+  // added when the doctor wrote the prescription.
+  async reduceStockAndCharge(prescriptionDoc, pharmacyId, itemsToDispense) {
+    let prescriptionCharges = await MedicineCharge.find({ pres_id: prescriptionDoc._id });
+    if (!prescriptionCharges.length) {
+      await this.addPrescriptionCharges(prescriptionDoc);
+      prescriptionCharges = await MedicineCharge.find({ pres_id: prescriptionDoc._id });
+    }
 
     for (const item of itemsToDispense) {
       const med = await Medicine.findById(item.med_id);
@@ -415,23 +461,10 @@ export const TriggerEngine = {
       await Medicine.findByIdAndUpdate(item.med_id, {
         $inc: { quantity: -item.quantity },
       });
-
-      // Insert medicine charge (Slide 27)
-      const chargeCount = await MedicineCharge.countDocuments();
-      const amount = (med.unit_price || med.unitPrice || 10) * item.quantity;
-
-      await MedicineCharge.create({
-        charge_id: `MC-${String(chargeCount + 1001).padStart(4, "0")}`,
-        bill_id: bill._id,
-        pres_id: prescriptionDoc._id,
-        med_id: med._id,
-        medicine_name: med.name,
-        quantity: item.quantity,
-        amount,
-      });
     }
 
-    await this.recalculateBill(bill._id);
+    const affectedBillIds = [...new Set(prescriptionCharges.map((charge) => String(charge.bill_id)))];
+    for (const billId of affectedBillIds) await this.recalculateBill(billId);
   },
 
   // ==========================================
@@ -533,7 +566,8 @@ export const TriggerEngine = {
   // Trigger 21: trg_auto_assign_nurse (Smart Workload Balancing - Pages 2, 29)
   async autoAssignNurse(admissionDoc) {
     // Find all active nurses
-    const nurses = await MedicalStaff.find({ staff_type: "Nurse" });
+    const nurseRecords = await MedicalStaff.find({ staff_type: "Nurse" }).populate("emp_id");
+    const nurses = nurseRecords.filter((nurse) => !["resigned", "terminated"].includes(nurse.emp_id?.employment_status));
     if (!nurses || nurses.length === 0) return null;
 
     // Count active assignments for each nurse

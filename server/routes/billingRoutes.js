@@ -3,7 +3,9 @@ import { auth, roles } from "../middleware/auth.js";
 import {
   getBills,
   getBillById,
-  processPayment,
+  createRazorpayOrder,
+  verifyRazorpayPayment,
+  handleRazorpayWebhook,
   getBillReceipt,
 } from "../controllers/billingController.js";
 
@@ -21,12 +23,9 @@ router.get(
   roles("admin", "receptionist", "accountant", "patient"),
   getBillById,
 );
-router.post(
-  "/:id/pay",
-  auth,
-  roles("admin", "accountant", "patient"),
-  processPayment,
-);
+router.post("/razorpay-webhook", handleRazorpayWebhook);
+router.post("/:id/razorpay/order", auth, roles("admin", "accountant", "patient"), createRazorpayOrder);
+router.post("/:id/razorpay/verify", auth, roles("admin", "accountant", "patient"), verifyRazorpayPayment);
 router.get(
   "/:id/receipt",
   auth,

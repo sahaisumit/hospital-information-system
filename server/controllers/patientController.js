@@ -6,7 +6,15 @@ import {
   Prescription,
   Admission,
   Bill,
+  NurseAssignment,
+  MedicalStaff,
 } from "../models/index.js";
+
+const nurseRecordId = async (user) => {
+  if (!user?.emp_id) return null;
+  const staff = await MedicalStaff.findOne({ emp_id: user.emp_id }).select("_id");
+  return staff?._id || user.emp_id;
+};
 
 export const getPatients = async (req, res) => {
   try {
@@ -23,6 +31,12 @@ export const getPatients = async (req, res) => {
         { patient_id: { $regex: search, $options: "i" } },
         { phone: { $regex: search, $options: "i" } },
       ];
+    }
+
+    if (req.user?.role === "nurse") {
+      const assignmentIds = await NurseAssignment.find({ nurse_emp_id: await nurseRecordId(req.user), active: true }).distinct("admission_id");
+      const assignedPatientIds = await Admission.find({ _id: { $in: assignmentIds }, status: "admitted" }).distinct("patient_id");
+      query._id = { $in: assignedPatientIds };
     }
 
     const patients = await Patient.find(query)
@@ -73,6 +87,10 @@ export const getPatientById = async (req, res) => {
   try {
     const patient = await Patient.findById(req.params.id);
     if (!patient) return res.status(404).json({ message: "Patient not found" });
+    if (req.user?.role === "nurse") {
+      const assignedAdmission = await Admission.findOne({ patient_id: patient._id, status: "admitted", assigned_nurse: await nurseRecordId(req.user) });
+      if (!assignedAdmission) return res.status(403).json({ message: "You can only access patients assigned to your nursing account." });
+    }
 
     // Fetch longitudinal history, appointments, prescriptions, admissions, bills
     const [history, appointments, prescriptions, admissions, bills] =
@@ -109,6 +127,7 @@ export const addMedicalHistory = async (req, res) => {
   try {
     const patient = await Patient.findById(req.params.id);
     if (!patient) return res.status(404).json({ message: "Patient not found" });
+    if (req.user?.role === "nurse" && !(await Admission.findOne({ patient_id: patient._id, status: "admitted", assigned_nurse: await nurseRecordId(req.user) }))) return res.status(403).json({ message: "You can only access patients assigned to your nursing account." });
 
     const count = await MedicalHistory.countDocuments();
     const record = await MedicalHistory.create({
@@ -131,6 +150,7 @@ export const getPatientReport = async (req, res) => {
   try {
     const patient = await Patient.findById(req.params.id);
     if (!patient) return res.status(404).json({ message: "Patient not found" });
+    if (req.user?.role === "nurse" && !(await Admission.findOne({ patient_id: patient._id, status: "admitted", assigned_nurse: await nurseRecordId(req.user) }))) return res.status(403).json({ message: "You can only access patients assigned to your nursing account." });
 
     const [history, appointments, prescriptions, admissions, bills] =
       await Promise.all([

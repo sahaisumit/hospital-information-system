@@ -5,8 +5,12 @@ import {
   Appointment,
   Prescription,
   LabTest,
+  TestCharge,
   Bed,
   Bill,
+  NurseAssignment,
+  Admission,
+  MedicalStaff,
 } from "../models/index.js";
 
 import { auth, permission } from "../middleware/auth.js";
@@ -60,6 +64,14 @@ export const crud = (router, path, Model, populateFields = []) => {
           });
         }
 
+        if (path === "beds" && req.user?.role === "nurse") {
+          const staff = await MedicalStaff.findOne({ emp_id: req.user.emp_id }).select("_id");
+          const nurseId = staff?._id || req.user.emp_id;
+          const assignmentIds = await NurseAssignment.find({ nurse_emp_id: nurseId, active: true }).distinct("admission_id");
+          const patientIds = await Admission.find({ _id: { $in: assignmentIds }, status: "admitted" }).distinct("patient_id");
+          query = query.where({ patient: { $in: patientIds } });
+        }
+
         // Populate only fields that actually exist
         if (
           ["appointments", "prescriptions", "lab-tests", "bills"].includes(path)
@@ -72,6 +84,25 @@ export const crud = (router, path, Model, populateFields = []) => {
         }
 
         const data = await query.sort({ createdAt: -1 });
+        if (path === "lab-tests") {
+          const charges = data.length
+            ? await TestCharge.find({ test_id: { $in: data.map((test) => test._id) } }).populate("bill_id", "status")
+            : [];
+          const paidTestIds = new Set(charges.filter((charge) => charge.bill_id?.status === "paid").map((charge) => String(charge.test_id)));
+          return res.json(data.map((test) => {
+            const item = test.toObject();
+            delete item.report_file_data;
+            item.report_paid = paidTestIds.has(String(test._id));
+            if (req.user?.role === "doctor" && !item.report_paid) {
+              item.result = undefined;
+              item.notes = undefined;
+              item.report_file_name = undefined;
+              item.report_file_type = undefined;
+              item.completedAt = undefined;
+            }
+            return item;
+          }));
+        }
 
         res.json(data);
       } catch (e) {
@@ -93,6 +124,9 @@ export const crud = (router, path, Model, populateFields = []) => {
     permission(resourcePermissions.create),
     async (req, res) => {
       try {
+        if (path === "lab-tests") {
+          return res.status(403).json({ message: "Use the laboratory workflow to create lab tests" });
+        }
         const body = { ...req.body };
 
         // Convert patient name/patientId into ObjectId
@@ -192,6 +226,14 @@ export const crud = (router, path, Model, populateFields = []) => {
           });
         }
 
+        if (path === "beds" && req.user?.role === "nurse") {
+          const staff = await MedicalStaff.findOne({ emp_id: req.user.emp_id }).select("_id");
+          const nurseId = staff?._id || req.user.emp_id;
+          const assignmentIds = await NurseAssignment.find({ nurse_emp_id: nurseId, active: true }).distinct("admission_id");
+          const assigned = await Admission.exists({ _id: { $in: assignmentIds }, patient_id: d.patient, status: "admitted" });
+          if (!assigned) return res.status(403).json({ message: "You can only view rooms for patients assigned to your nursing account." });
+        }
+
         if (
           req.user?.role === "doctor" &&
           ["appointments", "prescriptions", "lab-tests"].includes(path)
@@ -217,6 +259,23 @@ export const crud = (router, path, Model, populateFields = []) => {
           }
         }
 
+        if (path === "lab-tests") {
+          const item = d.toObject();
+          delete item.report_file_data;
+          if (req.user?.role === "doctor") {
+            const charge = await TestCharge.findOne({ test_id: item._id }).populate("bill_id", "status");
+            if (charge?.bill_id?.status !== "paid") {
+              item.result = undefined;
+              item.notes = undefined;
+              item.report_file_name = undefined;
+              item.report_file_type = undefined;
+              item.completedAt = undefined;
+            }
+            item.report_paid = charge?.bill_id?.status === "paid";
+          }
+          return res.json(item);
+        }
+
         res.json(d);
       } catch (e) {
         res.status(500).json({
@@ -235,7 +294,17 @@ export const crud = (router, path, Model, populateFields = []) => {
     permission(resourcePermissions.update),
     async (req, res) => {
       try {
+        if (path === "lab-tests") {
+          return res.status(403).json({ message: "Use the laboratory workflow to submit lab reports" });
+        }
         const updates = { ...req.body };
+        if (path === "patients" && req.user?.role === "nurse") {
+          const staff = await MedicalStaff.findOne({ emp_id: req.user.emp_id }).select("_id");
+          const nurseId = staff?._id || req.user.emp_id;
+          const assignments = await NurseAssignment.find({ nurse_emp_id: nurseId, active: true }).distinct("admission_id");
+          const assigned = await Admission.exists({ _id: { $in: assignments }, patient_id: req.params.id, status: "admitted" });
+          if (!assigned) return res.status(403).json({ message: "You can only update patients assigned to your nursing account." });
+        }
         if (path === "appointments") {
           delete updates.payment_status;
           delete updates.payment_method;

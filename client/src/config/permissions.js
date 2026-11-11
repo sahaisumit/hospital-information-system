@@ -6,7 +6,7 @@ export const permissions = {
   },
 
   doctors: {
-    create: ["admin"],
+    create: [], // Doctor accounts are provisioned from staff onboarding.
     update: ["admin", "doctor"],
     delete: ["admin"],
   },
