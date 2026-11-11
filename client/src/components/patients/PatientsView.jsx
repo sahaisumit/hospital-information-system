@@ -2,8 +2,12 @@ import React, { useState, useEffect } from "react";
 import { Users, FileText, Plus, Search, Activity, Heart, AlertCircle, History } from "lucide-react";
 import { api } from "../../lib/api";
 import PrintModal from "../common/PrintModal";
+import Pagination from "../common/Pagination";
+import useListPagination from "../../hooks/useListPagination";
 
 export default function PatientsView() {
+  const user = JSON.parse(localStorage.getItem("his_user") || "{}");
+  const canRegisterPatient = ["admin", "receptionist"].includes(user.role);
   const [patients, setPatients] = useState([]);
   const [filteredPatients, setFilteredPatients] = useState([]);
   const [activeTab, setActiveTab] = useState("ALL");
@@ -72,6 +76,7 @@ export default function PatientsView() {
     }
     setFilteredPatients(result);
   }, [activeTab, searchQuery, patients]);
+  const patientPagination = useListPagination(filteredPatients);
 
   const handleRegisterPatient = async (e) => {
     e.preventDefault();
@@ -140,43 +145,43 @@ export default function PatientsView() {
   };
 
   return (
-    <div className="module-container">
-      <div className="module-header">
+    <div className="mx-auto w-full max-w-screen-2xl pb-10 mx-auto w-full max-w-screen-2xl">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 mb-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div>
           <h2>Patient Administration & EMR Records</h2>
-          <p className="sub-text">
+          <p className="mt-1 max-w-3xl text-sm text-slate-600">
             Unique digital health identifier, Outpatient (OPD) & Inpatient (IPD) lifecycle tracking, and longitudinal medical history.
           </p>
         </div>
-        <button className="btn-primary" onClick={() => setShowAddModal(true)}>
+        {canRegisterPatient && <button className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setShowAddModal(true)}>
           <Plus size={16} /> Register New Patient
-        </button>
+        </button>}
       </div>
 
-      {error && <div className="alert-banner alert-danger">{error}</div>}
-      {success && <div className="alert-banner alert-success">{success}</div>}
+      {error && <div className="my-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm border-red-200 bg-red-50 text-red-700">{error}</div>}
+      {success && <div className="my-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm border-emerald-200 bg-emerald-50 text-emerald-700">{success}</div>}
 
       {/* TABS FOR OPD vs IPD  */}
-      <div className="filter-tab-bar">
-        <button className={`tab-btn ${activeTab === "ALL" ? "active" : ""}`} onClick={() => setActiveTab("ALL")}>
+      <div className="mb-4 flex gap-2 overflow-x-auto border-b border-slate-200 pb-1">
+        <button className={`whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-4 py-2 text-sm font-semibold text-slate-500 transition hover:text-slate-900 ${activeTab === "ALL" ? "border-blue-600 bg-blue-50 text-blue-700" : ""}`} onClick={() => setActiveTab("ALL")}>
           All Patients ({patients.length})
         </button>
-        <button className={`tab-btn ${activeTab === "OPD" ? "active" : ""}`} onClick={() => setActiveTab("OPD")}>
+        <button className={`whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-4 py-2 text-sm font-semibold text-slate-500 transition hover:text-slate-900 ${activeTab === "OPD" ? "border-blue-600 bg-blue-50 text-blue-700" : ""}`} onClick={() => setActiveTab("OPD")}>
           OPD - Outpatients ({patients.filter((p) => (p.status || "OPD") === "OPD").length})
         </button>
-        <button className={`tab-btn ${activeTab === "IPD" ? "active" : ""}`} onClick={() => setActiveTab("IPD")}>
+        <button className={`whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-4 py-2 text-sm font-semibold text-slate-500 transition hover:text-slate-900 ${activeTab === "IPD" ? "border-blue-600 bg-blue-50 text-blue-700" : ""}`} onClick={() => setActiveTab("IPD")}>
           IPD - Admitted Inpatients ({patients.filter((p) => p.status === "IPD").length})
         </button>
-        <button className={`tab-btn ${activeTab === "Discharged" ? "active" : ""}`} onClick={() => setActiveTab("Discharged")}>
+        <button className={`whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-4 py-2 text-sm font-semibold text-slate-500 transition hover:text-slate-900 ${activeTab === "Discharged" ? "border-blue-600 bg-blue-50 text-blue-700" : ""}`} onClick={() => setActiveTab("Discharged")}>
           Discharged ({patients.filter((p) => p.status === "Discharged").length})
         </button>
       </div>
 
       {/* SEARCH TOOLBAR */}
-      <div className="module-search-row">
-        <div className="search-input-wrap">
+      <div className="mb-4 flex justify-end">
+        <div className="flex w-full max-w-md items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
           <Search size={16} />
-          <input
+          <input className="w-full border-0 p-0 focus:border-0 focus:ring-0"
             placeholder="Search by patient name, unique ID, or phone..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -185,7 +190,7 @@ export default function PatientsView() {
       </div>
 
       {/* PATIENT TABLE */}
-      <div className="table-wrap">
+      <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table>
           <thead>
             <tr>
@@ -199,23 +204,23 @@ export default function PatientsView() {
             </tr>
           </thead>
           <tbody>
-            {filteredPatients.map((p) => (
+            {patientPagination.pageItems.map((p) => (
               <tr key={p._id}>
                 <td><strong>{p.patient_id || p.patientId || p._id.slice(-6)}</strong></td>
                 <td>{p.name}</td>
                 <td>{p.gender || "M"} • {p.dob ? new Date(p.dob).toLocaleDateString() : "N/A"}</td>
-                <td><span className="blood-tag">{p.blood_group || p.bloodGroup || "O+"}</span></td>
+                <td><span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">{p.blood_group || p.bloodGroup || "O+"}</span></td>
                 <td>{p.phone || "—"}</td>
                 <td>
-                  <span className={`status-pill ${p.status === "IPD" ? "occupied" : p.status === "Discharged" ? "available" : "primary"}`}>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${p.status === "IPD" ? "bg-red-50 text-red-700" : p.status === "Discharged" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}>
                     {p.status || "OPD"}
                   </span>
                 </td>
                 <td>
-                  <div style={{ display: "flex", gap: "6px" }}>
+                  <div className="flex gap-1.5">
                     <button
                       type="button"
-                      className="action-btn-sm"
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700"
                       title="View EMR & Medical History"
                       onClick={() => handleOpenHistory(p)}
                     >
@@ -223,7 +228,7 @@ export default function PatientsView() {
                     </button>
                     <button
                       type="button"
-                      className="action-btn-sm"
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700"
                       title="Generate Full Patient Clinical Report"
                       onClick={() => handleGenerateReport(p._id)}
                     >
@@ -235,23 +240,24 @@ export default function PatientsView() {
             ))}
             {filteredPatients.length === 0 && (
               <tr>
-                <td colSpan="7" className="empty">No matching patient records found.</td>
+                <td colSpan="7" className="px-5 py-14 text-center text-sm text-slate-500">No matching patient records found.</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+      <div className="overflow-hidden rounded-b-2xl border border-t-0 border-slate-200 bg-white"><Pagination {...patientPagination} onPageChange={patientPagination.setPage} onPageSizeChange={patientPagination.setPageSize}/></div>
 
       {/* REGISTER NEW PATIENT MODAL */}
       {showAddModal && (
-        <div className="modal">
-          <form className="modal-card" onSubmit={handleRegisterPatient}>
-            <div className="modal-head">
+        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm">
+          <form className="my-auto grid max-h-[90vh] w-full max-w-xl content-start gap-4 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onSubmit={handleRegisterPatient}>
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white pb-3 pt-3">
               <h2>Register New Patient</h2>
-              <button type="button" className="close-btn" onClick={() => setShowAddModal(false)}>×</button>
+              <button type="button" className="rounded-md p-2 text-xl text-slate-500 hover:bg-slate-100" onClick={() => setShowAddModal(false)}>×</button>
             </div>
 
-            <div className="grid-2-inputs">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label>
                 Full Name
                 <input
@@ -342,9 +348,9 @@ export default function PatientsView() {
               />
             </label>
 
-            <div className="modal-actions">
-              <button type="button" className="btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
-              <button type="submit" className="btn-primary">Register & Create Digital ID</button>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+              <button type="button" className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200" onClick={() => setShowAddModal(false)}>Cancel</button>
+              <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Register & Create Digital ID</button>
             </div>
           </form>
         </div>
@@ -352,37 +358,37 @@ export default function PatientsView() {
 
       {/* LONGITUDINAL MEDICAL HISTORY MODAL */}
       {showHistoryModal && selectedPatient && (
-        <div className="modal">
-          <div className="modal-card wide-modal-card">
-            <div className="modal-head">
+        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm">
+          <div className="my-auto grid max-h-[90vh] w-full max-w-xl content-start gap-4 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl max-w-4xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white pb-3 pt-3">
               <div>
                 <h2>Electronic Medical Record (EMR) — {selectedPatient.name}</h2>
                 <small>Unique ID: {selectedPatient.patient_id || selectedPatient.patientId} | Status: {selectedPatient.status || "OPD"}</small>
               </div>
-              <button type="button" className="close-btn" onClick={() => setShowHistoryModal(false)}>×</button>
+              <button type="button" className="rounded-md p-2 text-xl text-slate-500 hover:bg-slate-100" onClick={() => setShowHistoryModal(false)}>×</button>
             </div>
 
-            <div className="history-modal-content">
+            <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
               {/* Existing History Timeline */}
-              <div className="history-timeline-section">
+              <div className="space-y-4">
                 <h3>Longitudinal Diagnoses & Clinical Timeline (Medical_history)</h3>
-                <div className="timeline-items">
+                <div className="space-y-3">
                   {patientDetails?.history?.map((h) => (
-                    <div key={h._id} className="timeline-item">
-                      <div className="timeline-date">{new Date(h.diagnosis_date).toLocaleDateString()}</div>
-                      <div className="timeline-bubble">
+                    <div key={h._id} className="flex gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="shrink-0 text-xs font-semibold text-slate-500">{new Date(h.diagnosis_date).toLocaleDateString()}</div>
+                      <div className="min-w-0">
                         <strong>{h.condition_md}</strong>
                         <p>{h.notes}</p>
                       </div>
                     </div>
                   ))}
                   {(!patientDetails?.history || patientDetails.history.length === 0) && (
-                    <p className="empty">No chronic diagnoses logged yet.</p>
+                    <p className="px-5 py-14 text-center text-sm text-slate-500">No chronic diagnoses logged yet.</p>
                   )}
                 </div>
 
                 {/* Add Diagnosis Entry Form */}
-                <form className="add-history-form" onSubmit={handleAddHistoryNote}>
+                <form className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-white p-4" onSubmit={handleAddHistoryNote}>
                   <h4>Log New Clinical Finding / Diagnosis</h4>
                   <input
                     required
@@ -395,16 +401,16 @@ export default function PatientsView() {
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Doctor observations, clinical plan, prescribed treatment..."
                   />
-                  <button type="submit" className="btn-primary" style={{ alignSelf: "flex-start" }}>
+                  <button type="submit" className="inline-flex self-start items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
                     + Record Diagnosis to EMR
                   </button>
                 </form>
               </div>
 
               {/* Quick Summary of Encounters */}
-              <div className="encounters-summary-section">
+              <div className="mt-6 space-y-3">
                 <h4>Clinical Encounters Summary</h4>
-                <div className="summary-stat-box">
+                <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-4">
                   <div><strong>Appointments:</strong> {patientDetails?.appointments?.length || 0}</div>
                   <div><strong>Prescriptions:</strong> {patientDetails?.prescriptions?.length || 0}</div>
                   <div><strong>Admissions (IPD):</strong> {patientDetails?.admissions?.length || 0}</div>
@@ -413,8 +419,7 @@ export default function PatientsView() {
 
                 <button
                   type="button"
-                  className="btn-primary"
-                  style={{ width: "100%", marginTop: "15px" }}
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => handleGenerateReport(selectedPatient._id)}
                 >
                   <FileText size={16} /> Print Full Case Summary

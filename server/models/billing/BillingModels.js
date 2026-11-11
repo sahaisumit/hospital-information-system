@@ -20,6 +20,17 @@ export const BillSchema = new mongoose.Schema(
     },
     payment_method: { type: String, default: "Pending" },
     paymentMethod: { type: String }, // alias
+    razorpay_order_id: { type: String, index: true },
+    razorpay_payment_id: { type: String, index: true },
+    razorpay_order_amount: { type: Number, min: 0 }, // Amount in paise, as sent to Razorpay.
+    razorpay_orders: [{
+      order_id: { type: String, required: true },
+      amount: { type: Number, required: true }, // Paise.
+      status: { type: String, enum: ["created", "captured"], default: "created" },
+      payment_id: { type: String },
+      created_at: { type: Date, default: Date.now },
+      captured_at: { type: Date },
+    }],
     paid_at: { type: Date },
     paidAt: { type: Date }, // alias
     // Breakdown totals for fast reporting

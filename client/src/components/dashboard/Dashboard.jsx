@@ -17,6 +17,7 @@ import {
   Plus,
   Clock,
   ShieldCheck,
+  FileText,
 } from "lucide-react";
 import navItems from "../../config/navigation";
 
@@ -51,9 +52,6 @@ export default function Dashboard() {
         "doctor",
         "nurse",
         "receptionist",
-        "pharmacist",
-        "lab",
-        "accountant",
       ],
     },
     {
@@ -66,11 +64,8 @@ export default function Dashboard() {
       color: "#059669",
       roles: [
         "admin",
-        "doctor",
         "nurse",
         "receptionist",
-        "pharmacist",
-        "accountant",
         "patient",
       ],
     },
@@ -85,7 +80,7 @@ export default function Dashboard() {
       icon: CalendarDays,
       link: "/appointments",
       color: "#d97706",
-      roles: ["admin", "doctor", "nurse", "receptionist", "patient"],
+      roles: ["admin", "doctor", "receptionist", "patient"],
     },
     {
       id: "beds",
@@ -95,7 +90,7 @@ export default function Dashboard() {
       icon: BedDouble,
       link: "/beds",
       color: "#7c3aed",
-      roles: ["admin", "doctor", "nurse", "receptionist"],
+      roles: ["admin", "doctor", "nurse"],
     },
     {
       id: "medicines",
@@ -105,7 +100,17 @@ export default function Dashboard() {
       icon: Pill,
       link: "/medicines",
       color: "#dc2626",
-      roles: ["admin", "doctor", "nurse", "pharmacist"],
+      roles: ["admin", "pharmacist"],
+    },
+    {
+      id: "laboratory",
+      title: "Laboratory Worklist",
+      value: "Open Worklist",
+      sub: "Orders and reports for your care team",
+      icon: FlaskConical,
+      link: "/lab-tests",
+      color: "#059669",
+      roles: ["admin", "doctor", "lab"],
     },
     {
       id: "bills",
@@ -128,9 +133,9 @@ export default function Dashboard() {
     },
     {
       id: "profile",
-      title: "My Profile & Status",
-      value: user.is_available !== false ? "● Available" : "● Not Available",
-      sub: `Role: ${role.toUpperCase()} • Click to update`,
+      title: role === "patient" ? "My Profile" : "My Profile & Status",
+      value: role === "patient" ? "View Profile" : user.is_available !== false ? "● Available" : "● Not Available",
+      sub: role === "patient" ? "Manage your personal and medical details" : `Role: ${role.toUpperCase()} • Click to update`,
       icon: UserCircle,
       link: "/profile",
       color: "#0891b2",
@@ -150,7 +155,7 @@ export default function Dashboard() {
   // Filter KPI cards strictly according to user role
   const visibleCards = allCards.filter((c) => c.roles.includes(role));
 
-  // DFD Operational Panels
+  // Operational panels
   const allPanels = [
     {
       id: "patient-appointment",
@@ -214,9 +219,6 @@ export default function Dashboard() {
         "doctor",
         "nurse",
         "receptionist",
-        "pharmacist",
-        "lab",
-        "accountant",
       ],
     },
     {
@@ -227,7 +229,7 @@ export default function Dashboard() {
       btnText: "Consultation Slots & Slips",
       icon: CalendarDays,
       color: "#d97706",
-      roles: ["admin", "doctor", "nurse", "receptionist"],
+      roles: ["admin", "doctor", "receptionist"],
     },
     {
       id: "beds-module",
@@ -237,7 +239,7 @@ export default function Dashboard() {
       btnText: "Room Board & Admissions",
       icon: BedDouble,
       color: "#7c3aed",
-      roles: ["admin", "doctor", "nurse", "receptionist"],
+      roles: ["admin", "doctor", "nurse"],
     },
     {
       id: "lab-module",
@@ -247,17 +249,27 @@ export default function Dashboard() {
       btnText: "Diagnostic Tests & Reports",
       icon: FlaskConical,
       color: "#059669",
-      roles: ["admin", "doctor", "nurse", "lab"],
+      roles: ["admin", "doctor", "lab"],
     },
     {
       id: "pharmacy-module",
-      title: "Pharmacy & Prescriptions",
-      desc: "Medicine inventory with batch and expiry tracking, automatic expired medicine blocking, and real-time stock deduction.",
+      title: "Pharmacy",
+      desc: "Manage medicine inventory, batch and expiry tracking, prescription dispensing, and stock levels.",
       link: "/medicines",
       btnText: "Pharmacy & Dispensing",
       icon: Pill,
       color: "#dc2626",
-      roles: ["admin", "doctor", "nurse", "pharmacist"],
+      roles: ["admin", "pharmacist"],
+    },
+    {
+      id: "doctor-prescriptions",
+      title: "Clinical Prescriptions",
+      desc: "Write prescriptions for your confirmed appointments and close the visit when treatment is recorded.",
+      link: "/prescriptions",
+      btnText: "Open Prescriptions",
+      icon: FileText,
+      color: "#dc2626",
+      roles: ["admin", "doctor"],
     },
     {
       id: "billing-module",
@@ -277,7 +289,7 @@ export default function Dashboard() {
       btnText: "Staff Directory & Workload",
       icon: UserCheck,
       color: "#0891b2",
-      roles: ["admin", "doctor", "nurse", "accountant"],
+      roles: ["admin", "nurse"],
     },
   ];
 
@@ -285,26 +297,26 @@ export default function Dashboard() {
   const visiblePanels = allPanels.filter((p) => p.roles.includes(role));
 
   return (
-    <div className="dashboard-container">
+    <div className="mx-auto w-full max-w-screen-2xl mx-auto w-full max-w-screen-2xl">
       {/* MANIT BHOPAL PROJECT BRANDING & SPECIFICATION BANNER */}
       <ManitBanner />
 
       {/* USER ROLE GREETING & STATUS BANNER */}
-      <div className="user-welcome-banner">
-        <div className="welcome-text-group">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-white p-5 sm:p-6 mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-white p-5 sm:p-6">
+        <div className="space-y-1">
           <h2>Welcome, {user.name || "User"}!</h2>
           <p>
             Logged in as{" "}
-            <strong className="role-tag">{role.toUpperCase()}</strong> •
+            <strong className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">{role.toUpperCase()}</strong> •
             Hospital Information System
           </p>
         </div>
-        <div className="welcome-actions">
-          <Link to="/profile" className="btn-secondary-sm">
+        <div className="flex flex-wrap gap-2">
+          <Link to="/profile" className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             <UserCircle size={15} /> My Profile
           </Link>
           {role === "patient" && (
-            <Link to="/appointments" className="btn-primary-sm">
+            <Link to="/appointments" className="inline-flex items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
               <Plus size={15} /> Book Appointment
             </Link>
           )}
@@ -312,40 +324,37 @@ export default function Dashboard() {
       </div>
 
       {/* KPI METRICS OVERVIEW: Strictly role-tailored */}
-      <div className="cards-grid-kpi">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {visibleCards.map((c, i) => {
           const Icon = c.icon;
           return (
-            <Link to={c.link} className="kpi-card" key={i}>
-              <div className="kpi-card-top">
+            <Link to={c.link} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" key={i}>
+              <div className="mb-2 flex items-start justify-between">
                 <small>{c.title}</small>
-                <div
-                  className="kpi-icon-wrap"
-                  style={{ background: `${c.color}15`, color: c.color }}
-                >
+                <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-50 text-blue-700">
                   <Icon size={18} />
                 </div>
               </div>
-              <strong className="kpi-value">{c.value}</strong>
-              <span className="kpi-sub">{c.sub}</span>
+              <strong className="text-2xl font-extrabold leading-tight text-slate-900">{c.value}</strong>
+              <span className="mt-1 text-xs text-slate-500">{c.sub}</span>
             </Link>
           );
         })}
       </div>
 
       {/* OPERATIONAL MODULES / QUICK ACTIONS: Strictly role-tailored */}
-      <div className="dfd-modules-grid">
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {visiblePanels.map((panel) => {
           const Icon = panel.icon;
           return (
-            <div className="dfd-panel" key={panel.id}>
-              <div className="panel-title-row">
+            <div key={panel.id} className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-3 flex items-center gap-3">
                 <Icon size={20} color={panel.color} />
-                <h3>{panel.title}</h3>
+                <h3 className="text-lg font-semibold text-slate-900">{panel.title}</h3>
               </div>
-              <p className="panel-desc">{panel.desc}</p>
-              <div className="panel-links">
-                <Link to={panel.link} className="panel-btn">
+              <p className="mb-4 flex-1 text-sm leading-6 text-slate-600 mt-2 text-sm leading-6 text-slate-600">{panel.desc}</p>
+              <div className="flex justify-end">
+                <Link to={panel.link} className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-600 hover:text-white">
                   {panel.btnText} <ArrowRight size={14} />
                 </Link>
               </div>

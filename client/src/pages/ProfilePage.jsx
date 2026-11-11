@@ -147,10 +147,13 @@ export default function ProfilePage() {
       const payload = {
         name,
         phone,
-        is_available: isAvailable,
-        status_note: statusNote,
         ...(password ? { password } : {}),
       };
+
+      if (role !== "patient") {
+        payload.is_available = isAvailable;
+        payload.status_note = statusNote;
+      }
 
       if (role === "patient") {
         payload.dob = dob;
@@ -177,8 +180,10 @@ export default function ProfilePage() {
       const cached = JSON.parse(localStorage.getItem("his_user") || "{}");
       cached.name = updated.user.name;
       cached.phone = updated.user.phone;
-      cached.is_available = updated.is_available;
-      cached.status_note = updated.status_note;
+      if (role !== "patient") {
+        cached.is_available = updated.is_available;
+        cached.status_note = updated.status_note;
+      }
       localStorage.setItem("his_user", JSON.stringify(cached));
 
       setSuccess("Profile updated successfully!");
@@ -216,8 +221,8 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="module-container">
-        <div className="card-placeholder" style={{ padding: "40px", textAlign: "center" }}>
+      <div className="mx-auto w-full max-w-screen-2xl pb-10 mx-auto w-full max-w-screen-2xl">
+        <div className="grid min-h-48 place-items-center rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">
           Loading profile information...
         </div>
       </div>
@@ -225,55 +230,55 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="module-container profile-container">
+    <div className="mx-auto w-full max-w-screen-2xl pb-10 max-w-5xl mx-auto w-full max-w-screen-2xl">
       {/* HEADER SECTION */}
-      <div className="module-header profile-head-banner">
-        <div className="profile-title-group">
-          <div className="profile-avatar-large">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-6">
+        <div className="flex items-center gap-4">
+          <div className="grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-blue-600 to-violet-600 text-2xl font-extrabold text-white shadow-lg">
             {name?.[0]?.toUpperCase() || "U"}
           </div>
           <div>
-            <div className="profile-badge-row">
-              <span className={`status-pill role-pill ${role}`}>
+            <div className="mb-1 flex flex-wrap gap-2">
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
                 {role.toUpperCase()}
               </span>
-              <span className={`status-pill ${isAvailable ? "available" : "occupied"}`}>
+              {role !== "patient" && <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${isAvailable ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
                 ● {isAvailable ? "AVAILABLE" : "NOT AVAILABLE"}
-              </span>
+              </span>}
             </div>
             <h2>{name}</h2>
-            <p className="sub-text">{getRoleBadgeTitle(role)} • {email}</p>
+            <p className="mt-1 max-w-3xl text-sm text-slate-600">{getRoleBadgeTitle(role)} • {email}</p>
           </div>
         </div>
 
         {/* QUICK AVAILABILITY STATUS TOGGLE CARD */}
-        <div className="availability-card">
-          <div className="availability-info">
-            <span className="availability-label">Current Duty / Availability:</span>
-            <strong className={isAvailable ? "text-success" : "text-danger"}>
+        {role !== "patient" && <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex flex-col">
+            <span className="text-[11px] font-semibold uppercase text-slate-500">Current Duty / Availability:</span>
+            <strong className={isAvailable ? "text-emerald-700" : "text-red-700"}>
               {isAvailable ? "Available" : "Not Available"}
             </strong>
-            <small className="availability-note">{statusNote}</small>
+            <small className="max-w-48 truncate text-xs text-slate-500">{statusNote}</small>
           </div>
           <button
             type="button"
-            className={`btn-availability-toggle ${isAvailable ? "btn-active" : "btn-inactive"}`}
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold transition ${isAvailable ? "bg-blue-600 text-white hover:bg-blue-700" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
             onClick={handleToggleAvailability}
             title="Click to toggle availability status"
           >
             {isAvailable ? <Check size={16} /> : <X size={16} />}
             {isAvailable ? "Set Not Available" : "Set Available"}
           </button>
-        </div>
+        </div>}
       </div>
 
-      {error && <div className="alert-banner alert-danger"><AlertTriangle size={18} /> {error}</div>}
-      {success && <div className="alert-banner alert-success"><CheckCircle size={18} /> {success}</div>}
+      {error && <div className="my-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm border-red-200 bg-red-50 text-red-700"><AlertTriangle size={18} /> {error}</div>}
+      {success && <div className="my-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm border-emerald-200 bg-emerald-50 text-emerald-700"><CheckCircle size={18} /> {success}</div>}
 
-      <form onSubmit={handleSaveProfile} className="profile-form-grid">
+      <form onSubmit={handleSaveProfile} className="grid grid-cols-1 gap-5 md:grid-cols-2">
         {/* SECTION 1: ACCOUNT & CONTACT INFO */}
-        <div className="profile-card">
-          <div className="card-head">
+        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
             <User size={18} color="#1769e0" />
             <h3>Basic Information</h3>
           </div>
@@ -296,7 +301,7 @@ export default function ProfilePage() {
               disabled
               title="Email address cannot be changed"
             />
-            <small className="field-hint">Used for login and identification.</small>
+            <small className="mt-1 block text-xs text-slate-500">Used for login and identification.</small>
           </label>
 
           <label>
@@ -309,7 +314,7 @@ export default function ProfilePage() {
             />
           </label>
 
-          <label>
+          {role !== "patient" && <label>
             Availability Status Note
             <input
               type="text"
@@ -317,23 +322,23 @@ export default function ProfilePage() {
               onChange={(e) => setStatusNote(e.target.value)}
               placeholder="e.g. Available for consultations, In surgery, On leave"
             />
-          </label>
+          </label>}
         </div>
 
         {/* SECTION 2: ROLE SPECIFIC DETAILS */}
         {role === "patient" && (
-          <div className="profile-card">
-            <div className="card-head">
+          <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
               <Heart size={18} color="#dc2626" />
               <h3>Patient Health & Medical Record</h3>
             </div>
 
-            <div className="patient-id-banner">
+            <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
               <strong>Patient Registration ID:</strong>
-              <span className="id-tag">{roleDetails.patient_id || roleDetails.patientId || "PAT-NEW"}</span>
+              <span className="rounded bg-white px-2 py-1 font-mono font-bold text-blue-700">{roleDetails.patient_id || roleDetails.patientId || "PAT-NEW"}</span>
             </div>
 
-            <div className="form-row-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label>
                 Date of Birth
                 <input
@@ -353,7 +358,7 @@ export default function ProfilePage() {
               </label>
             </div>
 
-            <div className="form-row-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label>
                 Blood Group
                 <select value={bloodGroup} onChange={(e) => setBloodGroup(e.target.value)}>
@@ -397,8 +402,8 @@ export default function ProfilePage() {
         )}
 
         {role === "doctor" && (
-          <div className="profile-card">
-            <div className="card-head">
+          <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
               <Stethoscope size={18} color="#059669" />
               <h3>Doctor Professional Credentials & Schedule</h3>
             </div>
@@ -425,7 +430,7 @@ export default function ProfilePage() {
               />
             </label>
 
-            <div className="form-row-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label>
                 Consultation Fee (₹)
                 <input
@@ -450,12 +455,12 @@ export default function ProfilePage() {
 
             <label>
               Available Consultation Days
-              <div className="days-picker">
+              <div className="mt-1 flex flex-wrap gap-2">
                 {daysOfWeek.map((day) => (
                   <button
                     key={day}
                     type="button"
-                    className={`day-chip ${availableDays.includes(day) ? "selected" : ""}`}
+                    className={`rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-blue-50 ${availableDays.includes(day) ? "border-blue-600 bg-blue-600 text-white" : ""}`}
                     onClick={() => toggleDay(day)}
                   >
                     {day}
@@ -467,8 +472,8 @@ export default function ProfilePage() {
         )}
 
         {["nurse", "pharmacist", "lab", "receptionist", "accountant", "admin"].includes(role) && (
-          <div className="profile-card">
-            <div className="card-head">
+          <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
               <Shield size={18} color="#7c3aed" />
               <h3>Staff Department & Duty Info</h3>
             </div>
@@ -492,7 +497,7 @@ export default function ProfilePage() {
               />
             </label>
 
-            <div className="duty-notice">
+            <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-600">
               <Clock size={16} />
               <span>
                 Toggle your duty status using the Availability button to show team members and patients if you are currently on-duty or away.
@@ -502,13 +507,13 @@ export default function ProfilePage() {
         )}
 
         {/* SECTION 3: SECURITY & PASSWORD CHANGE */}
-        <div className="profile-card full-width">
-          <div className="card-head">
+        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 sm:col-span-2">
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
             <Key size={18} color="#d97706" />
             <h3>Security & Password</h3>
           </div>
 
-          <div className="form-row-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label>
               New Password (Leave blank to keep current)
               <input
@@ -531,10 +536,10 @@ export default function ProfilePage() {
             </label>
           </div>
 
-          <div className="profile-actions-bar">
+          <div className="flex justify-end pt-3">
             <button
               type="submit"
-              className="btn-primary btn-save-profile"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700"
               disabled={saving}
             >
               <Save size={16} />

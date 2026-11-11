@@ -1,5 +1,5 @@
 import express from "express";
-import { auth } from "../middleware/auth.js";
+import { auth, roles } from "../middleware/auth.js";
 import {
   getPatients,
   createPatient,
@@ -10,10 +10,10 @@ import {
 
 const router = express.Router();
 
-router.get("/", auth, getPatients);
-router.post("/", auth, createPatient);
-router.get("/:id", auth, getPatientById);
-router.post("/:id/medical-history", auth, addMedicalHistory);
-router.get("/:id/report", auth, getPatientReport);
+router.get("/", auth, roles("admin", "doctor", "nurse", "receptionist"), getPatients);
+router.post("/", auth, roles("admin", "receptionist"), createPatient);
+router.get("/:id", auth, roles("admin", "doctor", "nurse", "receptionist"), getPatientById);
+router.post("/:id/medical-history", auth, roles("admin", "doctor", "nurse"), addMedicalHistory);
+router.get("/:id/report", auth, roles("admin", "doctor", "nurse"), getPatientReport);
 
 export default router;

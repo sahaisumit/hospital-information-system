@@ -24,15 +24,22 @@ export const getUsers = async (req, res) => {
 
 export const createUser = async (req, res) => {
   try {
-    const { name, email, password, role, phone } = req.body;
+    const { name, email, password, role, phone, doctor_id } = req.body;
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({
         message: "Name, email, password, and role are required",
       });
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+      return res.status(400).json({ message: "Enter a valid work email" });
+    }
+    if (String(password).length < 8) {
+      return res.status(400).json({ message: "Temporary passwords must be at least 8 characters" });
+    }
 
-    const existingUser = await User.findOne({ email });
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const existingUser = await User.findOne({ email: normalizedEmail });
 
     if (existingUser) {
       return res.status(409).json({
@@ -42,13 +49,22 @@ export const createUser = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const doctor =
-      role === "doctor"
-        ? await Doctor.findOne({ email: email.toLowerCase().trim() })
-        : null;
+    const doctor = role === "doctor"
+      ? (doctor_id ? await Doctor.findById(doctor_id) : await Doctor.findOne({ email: normalizedEmail }))
+      : null;
+    if (role === "doctor" && !doctor) {
+      return res.status(400).json({ message: "Select an existing doctor staff profile before issuing login credentials" });
+    }
+    if (role === "doctor" && await User.findOne({ role: "doctor", emp_id: doctor._id })) {
+      return res.status(409).json({ message: "This doctor already has a login account" });
+    }
+    if (role === "doctor" && doctor.email !== normalizedEmail) {
+      doctor.email = normalizedEmail;
+      await doctor.save();
+    }
     const user = await User.create({
-      name,
-      email,
+      name: name || doctor?.name,
+      email: normalizedEmail,
       password: hashedPassword,
       role,
       phone,
@@ -87,9 +103,10 @@ export const updateUser = async (req, res) => {
       });
     }
 
-    if (email && email !== user.email) {
+    const normalizedEmail = email === undefined ? user.email : String(email).trim().toLowerCase();
+    if (email && normalizedEmail !== user.email) {
       const existingUser = await User.findOne({
-        email,
+        email: normalizedEmail,
         _id: { $ne: id },
       });
 
@@ -101,13 +118,22 @@ export const updateUser = async (req, res) => {
     }
 
     if (name !== undefined) user.name = name;
-    if (email !== undefined) user.email = email;
+    if (email !== undefined) user.email = normalizedEmail;
     if (role !== undefined) user.role = role;
     if (phone !== undefined) user.phone = phone;
     if (active !== undefined) user.active = active;
 
     if (password) {
       user.password = await bcrypt.hash(password, 10);
+    }
+
+    const nextRole = role === undefined ? user.role : role;
+    if (nextRole === "doctor") {
+      const doctor = await Doctor.findOne({ email: normalizedEmail });
+      if (!doctor) {
+        return res.status(400).json({ message: "A doctor staff profile with this work email is required" });
+      }
+      user.emp_id = doctor._id;
     }
 
     await user.save();

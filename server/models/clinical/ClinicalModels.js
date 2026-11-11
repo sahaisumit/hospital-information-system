@@ -26,6 +26,7 @@ export const AppointmentSchema = new mongoose.Schema(
     payment_status: { type: String, enum: ["pending", "paid"], default: "pending" },
     payment_method: { type: String, default: "" },
     payment_reference: { type: String, default: "" },
+    payment_bill_id: { type: mongoose.Schema.Types.ObjectId, ref: "Bill" },
     slip_generated: { type: Boolean, default: false },
   },
   opts

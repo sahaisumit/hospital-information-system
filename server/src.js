@@ -18,7 +18,9 @@ app.use(
     origin: (origin, callback) => {
       const allowedOrigins = [
         "http://localhost:5173",
+        "http://localhost:5174",
         "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
         "http://[::1]:5173",
       ];
 
@@ -31,7 +33,14 @@ app.use(
   }),
 );
 
-app.use(express.json());
+// Lab report uploads are base64 encoded in JSON; cap requests below MongoDB's
+// 16 MB document limit while allowing an 8 MB source file.
+app.use(express.json({
+  limit: "12mb",
+  verify(req, res, buffer) {
+    if (req.originalUrl === "/api/billing-ops/razorpay-webhook") req.rawBody = Buffer.from(buffer);
+  },
+}));
 
 app.use("/api", routes);
 

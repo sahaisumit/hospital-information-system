@@ -6,8 +6,8 @@ function useLogin(onLogin) {
   const nav = useNavigate();
 
   const [isRegister, setIsRegister] = useState(false);
-  const [email, setEmail] = useState("admin@his.local");
-  const [password, setPassword] = useState("Admin@123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 

@@ -8,9 +8,9 @@ function PatientRegistrationModal({
   if (!showPatientForm) return null;
 
   return (
-    <div className="modal">
-      <div className="modal-card">
-        <div className="modal-head">
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm">
+      <div className="my-auto grid max-h-[90vh] w-full max-w-xl content-start gap-4 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white pb-3 pt-3">
           <h2>Register New Patient</h2>
 
           <button

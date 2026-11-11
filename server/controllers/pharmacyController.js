@@ -8,6 +8,8 @@ import {
   Patient,
   Doctor,
   Appointment,
+  Bill,
+  MedicineCharge,
 } from "../models/index.js";
 import { TriggerEngine } from "../services/triggerEngine.js";
 
@@ -133,11 +135,94 @@ export const createPrescription = async (req, res) => {
       }
     }
 
+    await TriggerEngine.addPrescriptionCharges(newPrescription);
+
+    // Complete the visit only after the prescription has been recorded.
+    appointment.status = "completed";
+    await appointment.save();
+
     const populated = await Prescription.findById(newPrescription._id)
       .populate("patient_id")
       .populate("doctor_emp_id");
 
     res.status(201).json(populated);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+export const updatePrescription = async (req, res) => {
+  try {
+    if (req.user?.role !== "doctor") {
+      return res.status(403).json({ message: "Only the prescribing doctor can edit this prescription" });
+    }
+
+    const prescription = await Prescription.findById(req.params.id);
+    if (!prescription) return res.status(404).json({ message: "Prescription not found" });
+
+    const ownerDoctor = prescription.doctor_emp_id || prescription.doctor;
+    if (!req.user.emp_id || String(ownerDoctor) !== String(req.user.emp_id)) {
+      return res.status(403).json({ message: "You can only edit your own prescriptions" });
+    }
+    if (prescription.status !== "prescribed") {
+      return res.status(409).json({ message: "Only prescriptions that have not been dispensed can be edited" });
+    }
+
+    const medicines = req.body.medicines;
+    if (!Array.isArray(medicines)) {
+      return res.status(400).json({ message: "Prescription medicines must be provided as a list" });
+    }
+
+    const normalizedMedicines = medicines.map((item) => ({
+      med_id: item.med_id,
+      name: item.name,
+      quantity: Number(item.quantity || 1),
+      dosage: item.dosage || "",
+      duration: item.duration || "",
+      unit_price: Number(item.unit_price || 0),
+    }));
+
+    if (normalizedMedicines.some((item) => !Number.isFinite(item.quantity) || item.quantity < 1)) {
+      return res.status(400).json({ message: "Medicine quantities must be at least 1" });
+    }
+
+    for (const item of normalizedMedicines) {
+      if (item.med_id) await TriggerEngine.checkExpiredMedicine(item.med_id);
+    }
+
+    const existingCharges = await MedicineCharge.find({ pres_id: prescription._id });
+    if (existingCharges.length) {
+      const chargedBillIds = [...new Set(existingCharges.map((charge) => String(charge.bill_id)))];
+      const settledBill = await Bill.findOne({
+        _id: { $in: chargedBillIds },
+        status: { $ne: "pending" },
+      });
+      if (settledBill) {
+        return res.status(409).json({ message: "This prescription cannot be edited because its bill has already been paid or partially settled" });
+      }
+    }
+
+    prescription.instructions = typeof req.body.instructions === "string" ? req.body.instructions : "";
+    prescription.medicines = normalizedMedicines;
+    await prescription.save();
+
+    await PrescriptionMedicine.deleteMany({ pres_id: prescription._id });
+    const normalizedEntries = normalizedMedicines
+      .filter((item) => item.med_id)
+      .map((item) => ({
+        pres_id: prescription._id,
+        med_id: item.med_id,
+        quantity: item.quantity,
+        dosage: item.dosage || "1x daily",
+      }));
+    if (normalizedEntries.length) await PrescriptionMedicine.insertMany(normalizedEntries);
+    await TriggerEngine.syncPrescriptionCharges(prescription);
+
+    const populated = await Prescription.findById(prescription._id)
+      .populate("patient_id")
+      .populate("doctor_emp_id")
+      .populate("appointment_id");
+    res.json(populated);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }

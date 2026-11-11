@@ -12,6 +12,10 @@ import ResourceToolbar from "../components/resources/ResourceToolbar";
 import ResourceTable from "../components/resources/ResourceTable";
 import AddResourceModal from "../components/resources/AddResourceModal";
 import PatientRegistrationModal from "../components/resources/PatientRegistrationModal";
+import DoctorLoginManager from "../components/staff/DoctorLoginManager";
+import Pagination from "../components/common/Pagination";
+import useListPagination from "../hooks/useListPagination";
+import { useMemo, useState } from "react";
 
 function ResourcePage({ type }) {
   const c = configs[type];
@@ -36,6 +40,10 @@ function ResourcePage({ type }) {
   const { rows, patients, setPatients, doctors, load } = useResourceData(type);
 
   const { q, setQ, filteredRows } = useResourceFilter(rows);
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [specializationFilter, setSpecializationFilter] = useState("");
+  const resourceRows = useMemo(() => type !== "doctors" ? filteredRows : filteredRows.filter((doctor) => (!departmentFilter || doctor.department === departmentFilter || doctor.department_name === departmentFilter) && (!specializationFilter || doctor.specialization === specializationFilter)), [type, filteredRows, departmentFilter, specializationFilter]);
+  const pagination = useListPagination(resourceRows);
 
   const {
     selected,
@@ -43,7 +51,7 @@ function ResourcePage({ type }) {
     allVisibleSelected,
     toggleSelect,
     toggleSelectAll,
-  } = useResourceSelection(filteredRows);
+  } = useResourceSelection(pagination.pageItems);
 
   const { deleteOne, deleteSelected, save } = useResourceCrud({
     type,
@@ -68,6 +76,7 @@ function ResourcePage({ type }) {
 
   return (
     <>
+      {type === "doctors" && user.role === "admin" && <DoctorLoginManager doctors={rows} />}
       <ResourceHeader
         c={c}
         setShow={setShow}
@@ -81,11 +90,17 @@ function ResourcePage({ type }) {
         setQ={setQ}
         filteredRows={filteredRows}
         rows={rows}
+        departments={type === "doctors" ? [...new Set(rows.map((doctor) => doctor.department || doctor.department_name).filter(Boolean))].sort() : []}
+        specializations={type === "doctors" ? [...new Set(rows.map((doctor) => doctor.specialization).filter(Boolean))].sort() : []}
+        departmentFilter={departmentFilter}
+        setDepartmentFilter={setDepartmentFilter}
+        specializationFilter={specializationFilter}
+        setSpecializationFilter={setSpecializationFilter}
       />
 
       <ResourceTable
         c={c}
-        filteredRows={filteredRows}
+        filteredRows={pagination.pageItems}
         selected={selected}
         allVisibleSelected={allVisibleSelected}
         toggleSelect={toggleSelect}
@@ -94,6 +109,7 @@ function ResourcePage({ type }) {
         q={q}
         canDelete={canDelete}
       />
+      <div className="overflow-hidden rounded-b-2xl border border-t-0 border-slate-200 bg-white"><Pagination {...pagination} onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize}/></div>
 
       <AddResourceModal
         show={show}

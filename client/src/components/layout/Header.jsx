@@ -22,17 +22,17 @@ function Header({
   user,
 }) {
   return (
-    <header>
+    <header className="sticky top-0 z-20 flex h-[68px] items-center gap-3 border-b border-slate-200 bg-white/95 px-4 shadow-sm backdrop-blur sm:px-6">
       {/* MOBILE MENU */}
-      <button className="mobile" onClick={() => setOpen(!open)}>
+      <button className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 md:hidden" onClick={() => setOpen(!open)} aria-label={open ? "Close navigation" : "Open navigation"}>
         {open ? <X /> : <Menu />}
       </button>
 
       {/* ==========================================
           GLOBAL SEARCH
       ========================================== */}
-      <div className="header-search-wrapper">
-        <div className="search">
+      <div className="header-search-wrapper relative max-w-2xl flex-1">
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-blue-400 focus-within:bg-white">
           <Search size={18} />
 
           <input
@@ -43,12 +43,13 @@ function Header({
                 setShowSearchResults(true);
               }
             }}
+            className="w-full border-0 bg-transparent py-2.5 text-sm outline-none focus:shadow-none"
             placeholder="Search patients, doctors, records..."
           />
 
           {search && (
             <button
-              className="clear-search"
+              className="bg-transparent px-2 text-xl text-slate-500 hover:text-slate-900"
               onClick={() => {
                 setSearch("");
                 setSearchResults([]);
@@ -62,12 +63,12 @@ function Header({
 
         {/* SEARCH RESULTS */}
         {showSearchResults && search.trim() && (
-          <div className="global-search-results">
+          <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-[420px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl">
             {searchResults.length > 0 ? (
               searchResults.map((result) => (
                 <button
                   key={`${result.route}-${result._id}`}
-                  className="search-result"
+                  className="flex w-full flex-col gap-1 border-b border-slate-100 bg-white px-4 py-3 text-left hover:bg-blue-50"
                   onClick={() => openSearchResult(result)}
                 >
                   <div>
@@ -84,7 +85,7 @@ function Header({
                 </button>
               ))
             ) : (
-              <div className="no-search-results">No records found.</div>
+              <div className="p-5 text-center text-sm text-slate-600">No records found.</div>
             )}
           </div>
         )}
@@ -93,9 +94,10 @@ function Header({
       {/* ==========================================
           NOTIFICATIONS
       ========================================== */}
-      <div className="notification-wrapper">
+      {["admin", "pharmacist"].includes(user.role) && (
+      <div className="relative">
         <button
-          className="notification-button"
+          className="relative grid h-11 w-11 place-items-center rounded-xl bg-transparent text-slate-700 hover:bg-slate-100"
           onClick={() => {
             setShowNotifications(!showNotifications);
 
@@ -107,15 +109,15 @@ function Header({
           <Bell size={20} />
 
           {notificationCount > 0 && (
-            <span className="notification-badge">
+            <span className="absolute right-0 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
               {notificationCount > 99 ? "99+" : notificationCount}
             </span>
           )}
         </button>
 
         {showNotifications && (
-          <div className="notification-dropdown">
-            <div className="notification-header">
+          <div className="absolute right-0 top-full z-50 mt-2 max-h-[500px] w-[min(360px,90vw)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 p-4">
               <strong>Notifications</strong>
 
               <button onClick={() => setShowNotifications(false)}>×</button>
@@ -123,13 +125,13 @@ function Header({
 
             {/* LOW STOCK */}
             {notifications.lowStock.length > 0 && (
-              <div className="notification-section">
+              <div className="py-3">
                 <h4>Low Stock</h4>
 
                 {notifications.lowStock.map((medicine) => (
                   <button
                     key={medicine._id}
-                    className="notification-item"
+                    className="flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-blue-50"
                     onClick={() => {
                       setShowNotifications(false);
                       nav("/medicines");
@@ -145,13 +147,13 @@ function Header({
 
             {/* EXPIRING MEDICINES */}
             {notifications.expiring.length > 0 && (
-              <div className="notification-section">
+              <div className="py-3">
                 <h4>Expiring Medicines</h4>
 
                 {notifications.expiring.map((medicine) => (
                   <button
                     key={medicine._id}
-                    className="notification-item"
+                    className="flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-blue-50"
                     onClick={() => {
                       setShowNotifications(false);
                       nav("/medicines");
@@ -174,7 +176,7 @@ function Header({
 
             {/* NO NOTIFICATIONS */}
             {notificationCount === 0 && (
-              <div className="no-notifications">
+              <div className="flex flex-col items-center p-8 text-slate-500">
                 <Bell size={24} />
 
                 <p>No new notifications</p>
@@ -183,11 +185,12 @@ function Header({
           </div>
         )}
       </div>
+      )}
 
       {/* AVAILABILITY QUICK TOGGLE */}
-      <button
+      {user.role !== "patient" && <button
         type="button"
-        className={`header-availability-badge ${user.is_available !== false ? "status-online" : "status-offline"}`}
+        className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-bold ${user.is_available !== false ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}
         onClick={async () => {
           try {
             const nextStatus = !(user.is_available !== false);
@@ -208,15 +211,15 @@ function Header({
         }}
         title={`Click to switch status (Currently ${user.is_available !== false ? "Available" : "Not Available"})`}
       >
-        <span className="dot-indicator" />
-        <span className="availability-text">
+        <span className="inline-block h-2 w-2 rounded-full" />
+        <span className="text-xs font-semibold">
           {user.is_available !== false ? "Available" : "Not Available"}
         </span>
-      </button>
+      </button>}
 
       {/* THEME TOGGLE */}
       <button
-        className="theme-toggle"
+        className="grid h-10 w-10 place-items-center rounded-xl border border-transparent bg-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-100"
         onClick={() =>
           setTheme(theme === "light" ? "dark" : "light")
         }
@@ -232,11 +235,11 @@ function Header({
       {/* USER AVATAR WITH LINK TO PROFILE */}
       <button
         type="button"
-        className="top-avatar-btn"
+        className="ml-auto rounded-full bg-transparent p-0"
         onClick={() => nav("/profile")}
         title="View & Manage Profile"
       >
-        <div className="top-avatar">{user.name?.[0] || "A"}</div>
+        <div className="grid h-8 w-8 place-items-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">{user.name?.[0] || "A"}</div>
       </button>
     </header>
   );

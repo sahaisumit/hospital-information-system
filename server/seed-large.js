@@ -315,6 +315,19 @@ async function main() {
     { email: "doctor@his.local" },
     { $set: { emp_id: doctors[0]._id } },
   );
+  await User.updateOne(
+    { email: "doctor15@his.local" },
+    {
+      $set: {
+        name: doctors[14].name,
+        password: await bcrypt.hash("Admin@123", 10),
+        role: "doctor",
+        emp_id: doctors[14]._id,
+        active: true,
+      },
+    },
+    { upsert: true },
+  );
 
   const patientData = [];
   for (let i = 1; i <= 100; i++) {

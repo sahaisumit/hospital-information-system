@@ -7,7 +7,7 @@ import ResourcePage from "../pages/ResourcePage";
 import ProfilePage from "../pages/ProfilePage";
 import AppShell from "../components/layout/AppShell";
 
-// Specialized DFD Module Views
+// Specialized clinical module views
 import PatientsView from "../components/patients/PatientsView";
 import AppointmentsView from "../components/appointments/AppointmentsView";
 import PharmacyView from "../components/pharmacy/PharmacyView";
@@ -86,7 +86,7 @@ function AppRoutes() {
   };
 
   if (checkingAuth)
-    return <div className="loading-screen">Checking your sign-in…</div>;
+    return <div className="grid min-h-screen place-items-center bg-slate-50 text-slate-600">Checking your sign-in…</div>;
 
   if (!token) {
     return (
@@ -111,7 +111,7 @@ function AppRoutes() {
           }
         />
 
-        {/* Specialized DFD Module Routes with strict role authorization */}
+        {/* Specialized module routes with strict role authorization */}
         <Route
           path="/patients"
           element={

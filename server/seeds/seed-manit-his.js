@@ -346,10 +346,10 @@ async function seedDatabase() {
 
   // 8. EMPLOYEES & STAFF HIERARCHY
   const employees = [
-    // Mentors & Senior Doctors
+    // Senior Doctors
     {
       emp_id: "EMP-1001",
-      name: "Dr. Jay Kumar Jain",
+      name: "Dr. Kavita Rao",
       gender: "M",
       role_name: "Doctor",
       department_name: "Cardiology",
@@ -357,11 +357,11 @@ async function seedDatabase() {
       specialization: "Senior Interventional Cardiologist",
       license_no: "MP-MED-98210",
       consultation_fee: 1000,
-      email: "jkjain@manit.ac.in",
+      email: "kavita.rao@his.local",
     },
     {
       emp_id: "EMP-1002",
-      name: "Dr. Kuldeep Singh Yadav",
+      name: "Dr. Arjun Mehta",
       gender: "M",
       role_name: "Doctor",
       department_name: "Neurology",
@@ -369,7 +369,7 @@ async function seedDatabase() {
       specialization: "Senior Consultant Neurologist",
       license_no: "MP-MED-98211",
       consultation_fee: 900,
-      email: "ksyadav@manit.ac.in",
+      email: "arjun.mehta@his.local",
     },
     {
       emp_id: "EMP-1003",
@@ -448,36 +448,36 @@ async function seedDatabase() {
       staff_type: "Pharmacist",
       email: "rajesh.gupta@his.local",
     },
-    // Admins (Team members)
+    // Hospital administrators
     {
       emp_id: "EMP-5001",
-      name: "Sumit Sahai",
+      name: "IT Administrator",
       gender: "M",
       role_name: "Admin",
       department_name: "Administration",
       salary: 90000,
       admin_role: "IT",
-      email: "sumit@manit.ac.in",
+      email: "it.admin@his.local",
     },
     {
       emp_id: "EMP-5002",
-      name: "Akarshan Pathak",
+      name: "Billing Administrator",
       gender: "M",
       role_name: "Admin",
       department_name: "Administration",
       salary: 90000,
       admin_role: "Billing",
-      email: "akarshan@manit.ac.in",
+      email: "billing.admin@his.local",
     },
     {
       emp_id: "EMP-5003",
-      name: "Nikita Patidar",
+      name: "HR Administrator",
       gender: "F",
       role_name: "Admin",
       department_name: "Administration",
       salary: 88000,
       admin_role: "HR",
-      email: "nikita@manit.ac.in",
+      email: "hr.admin@his.local",
     },
     // {
     //   emp_id: "EMP-5004",
@@ -555,7 +555,7 @@ async function seedDatabase() {
     { email: "admin@his.local" },
     {
       $set: {
-        name: "Akarshan Pathak (Admin)",
+        name: "Hospital Admin",
         password: passwordHash,
         role: "admin",
       },
@@ -568,16 +568,41 @@ async function seedDatabase() {
     { email: "doctor@his.local" },
     {
       $set: {
-        name: "Dr. Jay Kumar Jain",
+        name: "Dr. Kavita Rao",
         password: passwordHash,
         role: "doctor",
-        emp_id: (await Doctor.findOne({ name: "Dr. Jay Kumar Jain" }))?._id,
+        emp_id: (await Doctor.findOne({ name: "Dr. Kavita Rao" }))?._id,
       },
     },
     { upsert: true },
   );
 
-  // Pharmacist user
+  // Dedicated demo login requested for the fifteenth doctor account.
+  let doctor15 = await Doctor.findOne({ email: "doctor15@his.local" });
+  if (!doctor15) {
+    doctor15 = await Doctor.create({
+      name: "Dr. Doctor 15",
+      email: "doctor15@his.local",
+      specialization: "General Medicine",
+      department: "Medicine",
+      consultation_fee: 500,
+      consultationFee: 500,
+    });
+  }
+  await User.updateOne(
+    { email: "doctor15@his.local" },
+    {
+      $set: {
+        name: doctor15.name,
+        password: passwordHash,
+        role: "doctor",
+        emp_id: doctor15._id,
+        active: true,
+      },
+    },
+    { upsert: true },
+  );
+
   await User.updateOne(
     { email: "pharmacist@his.local" },
     {
@@ -589,6 +614,31 @@ async function seedDatabase() {
     },
     { upsert: true },
   );
+
+  // Role-specific demo accounts use the same seeded password for easy local testing.
+  for (const account of [
+    { email: "nurse@his.local", name: "Nurse Sunita Rao", role: "nurse" },
+    { email: "reception@his.local", name: "Front Desk Receptionist", role: "receptionist" },
+    { email: "lab@his.local", name: "Ramesh Meena", role: "lab" },
+    { email: "accounts@his.local", name: "Billing Administrator", role: "accountant" },
+  ]) {
+    const linkedNurse = account.role === "nurse"
+      ? await Employee.findOne({ email: "sunita.rao@his.local" })
+      : null;
+    await User.updateOne(
+      { email: account.email },
+      {
+        $set: {
+          name: account.name,
+          password: passwordHash,
+          role: account.role,
+          active: true,
+          ...(linkedNurse ? { emp_id: linkedNurse._id } : {}),
+        },
+      },
+      { upsert: true },
+    );
+  }
 
   // 10. PATIENTS
   const patients = [
@@ -661,10 +711,25 @@ async function seedDatabase() {
     patMap[p.patient_id] = pDoc;
   }
 
+  const demoPatient = patMap["PAT-1001"];
+  await User.updateOne(
+    { email: "patient@his.local" },
+    {
+      $set: {
+        name: demoPatient.name,
+        password: await bcrypt.hash("Admin@123", 10),
+        role: "patient",
+        patient_id: demoPatient._id,
+        active: true,
+      },
+    },
+    { upsert: true },
+  );
+
   // 11. INPATIENT ADMISSION FOR PAT-1002 (Pooja Verma in ICU-01)
   const ipdPatient = patMap["PAT-1002"];
   const icuRoom = roomMap["ICU-01"];
-  const attendingDoc = doctorMap["Dr. Jay Kumar Jain"];
+  const attendingDoc = doctorMap["Dr. Kavita Rao"];
   const assignedNurse = await MedicalStaff.findOne({
     name: "Nurse Deepa Joseph",
   });
@@ -751,51 +816,67 @@ async function seedDatabase() {
       room_charges: 0,
     });
 
-    if (appt) {
-      await AppointmentCharge.create({
-        charge_id: "AC-1001",
-        bill_id: bill._id,
-        appointment_id: appt._id,
-        consultation_fee: 700,
-      });
-    }
-
-    // Add X-Ray Test
-    const xrayTest = await LabTest.create({
-      test_id: "LAB-1001",
-      test_type_id: testTypeMap["Chest X-Ray Digital"]?._id,
-      testName: "Chest X-Ray Digital",
-      patient_id: apptPatient._id,
-      doctor_emp_id: orthoDoc?._id,
-      status: "completed",
-      charge_amount: 500,
-      result:
-        "Bone density and alignment within normal limits. Mild degenerative changes.",
-    });
-
-    await TestCharge.create({
-      charge_id: "TC-1001",
-      bill_id: bill._id,
-      test_id: xrayTest._id,
-      test_name: "Chest X-Ray Digital",
-      amount: 500,
-    });
-
-    // Add Prescribed Meds
-    await MedicineCharge.create({
-      charge_id: "MC-1001",
-      bill_id: bill._id,
-      med_id: medMap["Paracetamol 500mg"]._id,
-      medicine_name: "Paracetamol 500mg",
-      quantity: 10,
-      amount: 25,
-    });
-
     console.log(
       "Seeded Consolidated Bill:",
       bill.bill_id,
       "for",
       apptPatient.name,
+    );
+  }
+
+  // Upsert the sample charges on every run. This also recovers cleanly if a
+  // previous run created the bill but stopped partway through its charges.
+  if (appt) {
+    await AppointmentCharge.updateOne(
+      { bill_id: bill._id, appointment_id: appt._id },
+      {
+        $set: {
+          charge_id: `AC-${bill.bill_id}`,
+          consultation_fee: 700,
+        },
+      },
+      { upsert: true },
+    );
+  }
+
+  // Add or reuse the sample X-Ray test, then ensure its bill charge exists.
+  const xrayTest = await LabTest.findOne({ test_id: "LAB-1001" }) || await LabTest.create({
+    test_id: "LAB-1001",
+    test_type_id: testTypeMap["Chest X-Ray Digital"]?._id,
+    testName: "Chest X-Ray Digital",
+    patient_id: apptPatient._id,
+    doctor_emp_id: orthoDoc?._id,
+    status: "completed",
+    charge_amount: 500,
+    result:
+      "Bone density and alignment within normal limits. Mild degenerative changes.",
+  });
+
+  await TestCharge.updateOne(
+    { bill_id: bill._id, test_id: xrayTest._id },
+    {
+      $set: {
+        charge_id: `TC-${bill.bill_id}`,
+        test_name: "Chest X-Ray Digital",
+        amount: 500,
+      },
+    },
+    { upsert: true },
+  );
+
+  const paracetamol = medMap["Paracetamol 500mg"];
+  if (paracetamol) {
+    await MedicineCharge.updateOne(
+      { bill_id: bill._id, med_id: paracetamol._id },
+      {
+        $set: {
+          charge_id: `MC-${bill.bill_id}`,
+          medicine_name: "Paracetamol 500mg",
+          quantity: 10,
+          amount: 25,
+        },
+      },
+      { upsert: true },
     );
   }
 

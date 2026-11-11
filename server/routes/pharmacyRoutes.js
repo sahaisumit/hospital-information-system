@@ -5,6 +5,7 @@ import {
   createMedicine,
   getPrescriptions,
   createPrescription,
+  updatePrescription,
   dispensePrescription,
   getPharmacies,
 } from "../controllers/pharmacyController.js";
@@ -14,7 +15,7 @@ const router = express.Router();
 router.get(
   "/medicines",
   auth,
-  roles("admin", "doctor", "nurse", "pharmacist"),
+  roles("admin", "doctor", "pharmacist"),
   getMedicines,
 );
 router.post("/medicines", auth, roles("admin", "pharmacist"), createMedicine);
@@ -24,26 +25,19 @@ router.get(
   roles(
     "admin",
     "doctor",
-    "nurse",
-    "receptionist",
-    "lab",
     "patient",
     "pharmacist",
   ),
   getPrescriptions,
 );
 router.post("/prescriptions", auth, roles("doctor"), createPrescription);
+router.put("/prescriptions/:id", auth, roles("doctor"), updatePrescription);
 router.post(
   "/prescriptions/:id/dispense",
   auth,
   roles("admin", "pharmacist"),
   dispensePrescription,
 );
-router.get(
-  "/pharmacies",
-  auth,
-  roles("admin", "doctor", "nurse", "pharmacist"),
-  getPharmacies,
-);
+router.get("/pharmacies", auth, roles("admin", "doctor", "pharmacist"), getPharmacies);
 
 export default router;

@@ -1,110 +1,52 @@
+const admin = ["admin"];
+
 export const permissions = {
   patients: {
-    read: [
-      "admin",
-      "doctor",
-      "nurse",
-      "receptionist",
-      "pharmacist",
-      "lab",
-      "accountant",
-    ],
+    read: ["admin", "doctor", "nurse", "receptionist"],
     create: ["admin", "receptionist"],
     update: ["admin", "doctor", "nurse", "receptionist"],
-    delete: ["admin"],
+    delete: admin,
   },
-
   doctors: {
-    read: [
-      "admin",
-      "doctor",
-      "nurse",
-      "receptionist",
-      "pharmacist",
-      "accountant",
-      "patient",
-    ],
-    create: ["admin"],
-    update: ["admin", "doctor"],
-    delete: ["admin"],
-  },
-
-  appointments: {
-    read: [
-      "admin",
-      "doctor",
-      "nurse",
-      "receptionist",
-      "accountant",
-      "patient",
-    ],
+    read: ["admin", "doctor", "nurse", "receptionist", "patient"],
     create: [],
-    update: ["admin", "nurse", "receptionist"],
-    delete: ["admin"],
+    update: admin,
+    delete: admin,
   },
-
+  appointments: {
+    read: ["admin", "doctor", "receptionist", "patient"],
+    create: [],
+    update: ["admin", "doctor", "receptionist"],
+    delete: admin,
+  },
   prescriptions: {
-    read: [
-      "admin",
-      "doctor",
-      "nurse",
-      "receptionist",
-      "lab",
-      "patient",
-      "pharmacist",
-    ],
+    read: ["admin", "doctor", "pharmacist", "patient"],
     create: [],
     update: [],
-    delete: ["admin"],
+    delete: admin,
   },
-
   medicines: {
-    read: [
-      "admin",
-      "doctor",
-      "nurse",
-      "pharmacist",
-    ],
+    read: ["admin", "doctor", "pharmacist"],
     create: ["admin", "pharmacist"],
     update: ["admin", "pharmacist"],
-    delete: ["admin"],
+    delete: admin,
   },
-
   "lab-tests": {
-    read: [
-      "admin",
-      "doctor",
-      "nurse",
-      "lab",
-      "receptionist",
-      "patient",
-    ],
+    read: ["admin", "doctor", "lab"],
     create: [],
     update: [],
-    delete: ["admin"],
+    delete: admin,
   },
-
   beds: {
-    read: [
-      "admin",
-      "doctor",
-      "nurse",
-      "receptionist",
-    ],
-    create: ["admin"],
+    read: ["admin", "doctor", "nurse"],
+    create: admin,
     update: ["admin", "nurse"],
-    delete: ["admin"],
+    delete: admin,
   },
-
   bills: {
-    read: [
-      "admin",
-      "receptionist",
-      "accountant",
-      "patient",
-    ],
+    read: ["admin", "receptionist", "accountant", "patient"],
     create: ["admin", "accountant"],
     update: ["admin", "accountant"],
-    delete: ["admin"],
+    delete: admin,
   },
 };

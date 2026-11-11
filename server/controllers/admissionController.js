@@ -6,12 +6,25 @@ import {
   Doctor,
   MedicalStaff,
   NurseAssignment,
+  Appointment,
 } from "../models/index.js";
 import { TriggerEngine } from "../services/triggerEngine.js";
 
+const nurseRecordId = async (user) => {
+  if (!user?.emp_id) return null;
+  const staff = await MedicalStaff.findOne({ emp_id: user.emp_id }).select("_id");
+  return staff?._id || user.emp_id;
+};
+
 export const getRooms = async (req, res) => {
   try {
-    const list = await Room.find().populate("patient").sort({ room_number: 1 });
+    let query = Room.find();
+    if (req.user?.role === "nurse") {
+      const assigned = await NurseAssignment.find({ nurse_emp_id: await nurseRecordId(req.user), active: true }).distinct("admission_id");
+      const admissions = await Admission.find({ _id: { $in: assigned }, status: "admitted" }).distinct("patient_id");
+      query = query.where({ patient: { $in: admissions } });
+    }
+    const list = await query.populate("patient").sort({ room_number: 1 });
     res.json(list);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -40,6 +53,11 @@ export const getAdmissions = async (req, res) => {
     let filter = {};
     if (status) filter.status = status;
     if (patient) filter.patient_id = patient;
+    if (req.user?.role === "nurse") {
+      const assigned = await NurseAssignment.find({ nurse_emp_id: await nurseRecordId(req.user), active: true }).distinct("admission_id");
+      filter._id = { $in: assigned };
+    }
+    if (req.user?.role === "doctor") filter.doctor_emp_id = req.user.emp_id;
 
     const list = await Admission.find(filter)
       .populate("patient_id")
@@ -69,7 +87,9 @@ export const admitPatient = async (req, res) => {
     } = req.body;
 
     const actualPatientId = patient_id || patient;
-    const actualDoctorId = doctor_emp_id || doctor;
+    const actualDoctorId = req.user?.role === "doctor" ? req.user.emp_id : (doctor_emp_id || doctor);
+    if (req.user?.role === "nurse") return res.status(403).json({ message: "Nurses cannot admit patients. A doctor or administrator must create the admission." });
+    if (!actualDoctorId) return res.status(400).json({ message: "An attending doctor is required" });
 
     // RUN TRIGGER 16: Ensure patient doesn't already have an active admission
     await TriggerEngine.checkSingleAdmission(actualPatientId);
@@ -125,6 +145,8 @@ export const dischargePatient = async (req, res) => {
   try {
     const admission = await Admission.findById(req.params.id);
     if (!admission) return res.status(404).json({ message: "Admission record not found" });
+    if (req.user?.role === "nurse") return res.status(403).json({ message: "Nurses cannot discharge patients. Contact the attending doctor or administrator." });
+    if (req.user?.role === "doctor" && String(admission.doctor_emp_id) !== String(req.user.emp_id)) return res.status(403).json({ message: "Only the attending doctor can discharge this patient." });
 
     if (admission.status === "discharged") {
       return res.status(400).json({ message: "Patient is already discharged" });
@@ -161,6 +183,43 @@ export const dischargePatient = async (req, res) => {
   }
 };
 
+export const forwardPatient = async (req, res) => {
+  try {
+    if (req.user?.role !== "doctor") return res.status(403).json({ message: "Only a doctor can forward a patient to another doctor." });
+    const { patient_id, doctor_emp_id, reason } = req.body;
+    if (!patient_id || !doctor_emp_id || String(doctor_emp_id) === String(req.user.emp_id)) return res.status(400).json({ message: "Choose another doctor and a patient to forward." });
+    const [patient, recipient] = await Promise.all([Patient.findById(patient_id), Doctor.findById(doctor_emp_id)]);
+    if (!patient || !recipient) return res.status(404).json({ message: "Patient or receiving doctor not found." });
+    if (recipient.is_available === false) return res.status(409).json({ message: `Dr. ${recipient.name} is currently unavailable.` });
+    const referralSlots = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"];
+    let day, referralSlot;
+    for (let offset = 1; offset <= 7 && !referralSlot; offset += 1) {
+      const date = new Date(); date.setUTCDate(date.getUTCDate() + offset);
+      day = date.toISOString().slice(0, 10);
+      const start = new Date(`${day}T00:00:00.000Z`);
+      const end = new Date(`${day}T23:59:59.999Z`);
+      const used = await Appointment.find({ doctor_emp_id: recipient._id, appointment_date: { $gte: start, $lte: end }, status: { $ne: "cancelled" } }).select("start_time");
+      const usedSlots = new Set(used.map((appointment) => appointment.start_time));
+      referralSlot = referralSlots.find((slot) => !usedSlots.has(slot));
+    }
+    if (!referralSlot) return res.status(409).json({ message: "The receiving doctor has no available referral slot in the next seven days." });
+    const [slotHour, slotMinute] = referralSlot.split(":").map(Number);
+    const slotEnd = `${String(slotHour + (slotMinute === 30 ? 1 : 0)).padStart(2, "0")}:${slotMinute === 30 ? "00" : "30"}`;
+    const count = await Appointment.countDocuments();
+    const referral = await Appointment.create({
+      appointment_id: `REF-${Date.now()}-${String(count + 1).padStart(3, "0")}`,
+      patient_id: patient._id, patient: patient._id,
+      doctor_emp_id: recipient._id, doctor: recipient._id,
+      appointment_date: day, date: day, start_time: referralSlot, end_time: slotEnd,
+      status: "scheduled", reason: `Doctor referral from ${req.user.name || "attending doctor"}: ${reason || "Clinical review and admission assessment"}`,
+      notes: `Referred by doctor ${req.user.emp_id}`,
+      consultation_fee: 0, payment_status: "paid", payment_method: "Referral",
+    });
+    const populated = await Appointment.findById(referral._id).populate("patient_id").populate("doctor_emp_id");
+    res.status(201).json(populated);
+  } catch (err) { res.status(400).json({ message: err.message }); }
+};
+
 export const getDischargeSummary = async (req, res) => {
   try {
     const admission = await Admission.findById(req.params.id)
@@ -170,6 +229,8 @@ export const getDischargeSummary = async (req, res) => {
       .populate("assigned_nurse");
 
     if (!admission) return res.status(404).json({ message: "Admission not found" });
+    if (req.user?.role === "nurse" && String(admission.assigned_nurse?._id || admission.assigned_nurse) !== String(await nurseRecordId(req.user))) return res.status(403).json({ message: "You can only view summaries for patients assigned to your account." });
+    if (req.user?.role === "doctor" && String(admission.doctor_emp_id?._id || admission.doctor_emp_id) !== String(req.user.emp_id)) return res.status(403).json({ message: "You can only view summaries for your patients." });
 
     res.json({
       institution: "Maulana Azad National Institute of Technology (MANIT) Bhopal",

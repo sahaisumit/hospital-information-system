@@ -71,6 +71,31 @@ for (const account of [
   }
   await User.updateOne({ email: account.email }, { $set: update }, { upsert: true });
 }
+// Dedicated doctor 15 demo login. Keep it linked to the matching schedule profile.
+let doctor15 = await Doctor.findOne({ email: "doctor15@his.local" });
+if (!doctor15) {
+  doctor15 = await Doctor.create({
+    name: "Dr. Doctor 15",
+    email: "doctor15@his.local",
+    specialization: "General Medicine",
+    department: "Medicine",
+    consultation_fee: 500,
+    consultationFee: 500,
+  });
+}
+await User.updateOne(
+  { email: "doctor15@his.local" },
+  {
+    $set: {
+      name: doctor15.name,
+      password: await bcrypt.hash("Admin@123", 10),
+      role: "doctor",
+      emp_id: doctor15._id,
+      active: true,
+    },
+  },
+  { upsert: true },
+);
 if ((await Medicine.countDocuments()) === 0)
   await Medicine.insertMany([
     {
