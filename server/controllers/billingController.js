@@ -180,6 +180,46 @@ export const getBillById = async (req, res) => {
   }
 };
 
+export const collectCashPayment = async (req, res) => {
+  try {
+    const bill = await Bill.findById(req.params.id);
+    if (!bill) return res.status(404).json({ message: "Bill not found" });
+    if (bill.status === "paid") return res.status(409).json({ message: "This invoice is already paid" });
+
+    const receiptNumber = String(req.body.receipt_number || "").trim();
+    if (!receiptNumber) return res.status(400).json({ message: "Cash receipt number is required" });
+
+    const appointmentCharges = await AppointmentCharge.find({ bill_id: bill._id });
+    const appointments = appointmentCharges.length
+      ? await Appointment.find({ _id: { $in: appointmentCharges.map((charge) => charge.appointment_id) } })
+      : [];
+    if (!appointments.some((appointment) => appointment.payment_method === "Cash" && appointment.payment_status !== "paid")) {
+      return res.status(400).json({ message: "This invoice has no unpaid cash appointment. Use online checkout instead." });
+    }
+
+    const amount = Number(req.body.amount);
+    const due = Math.max(0, Number(bill.total_amount || bill.total || 0) - Number(bill.amount_paid || 0));
+    if (!Number.isFinite(amount) || amount !== due) {
+      return res.status(400).json({ message: `Enter the exact remaining balance of ₹${due}` });
+    }
+
+    const updated = await Bill.findOneAndUpdate(
+      { _id: bill._id, status: { $ne: "paid" }, amount_paid: bill.amount_paid || 0 },
+      { $set: { amount_paid: Number(bill.amount_paid || 0) + amount, status: "paid", payment_method: "Cash", paymentMethod: "Cash", cash_receipt_number: receiptNumber, paid_at: new Date(), paidAt: new Date() } },
+      { new: true },
+    );
+    if (!updated) return res.status(409).json({ message: "This invoice was updated by another staff member. Refresh and try again." });
+
+    await Appointment.updateMany(
+      { _id: { $in: appointments.filter((appointment) => appointment.payment_method === "Cash").map((appointment) => appointment._id) }, payment_status: "pending" },
+      { $set: { payment_status: "paid", payment_reference: receiptNumber } },
+    );
+    res.json({ message: `Cash payment of ₹${amount} recorded. Receipt ${receiptNumber}.`, bill: updated });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
 export const createRazorpayOrder = async (req, res) => {
   try {
     if (!razorpayConfigured()) return res.status(503).json({ message: "Razorpay is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to the server environment." });
