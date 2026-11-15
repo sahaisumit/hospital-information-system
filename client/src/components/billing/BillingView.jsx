@@ -17,9 +17,6 @@ export default function BillingView() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
   const [paying, setPaying] = useState(false);
-  const [cashReceiptNumber, setCashReceiptNumber] = useState("");
-  const [cashAmount, setCashAmount] = useState("");
-  const [cashPayment, setCashPayment] = useState(false);
 
   // Receipt Print State
   const [receiptDoc, setReceiptDoc] = useState(null);
@@ -70,44 +67,6 @@ export default function BillingView() {
       setPaying(false);
     } catch (err) {
       setError(err.message);
-      setPaying(false);
-    }
-  };
-
-  const openPayment = async (bill) => {
-    setError("");
-    setSelectedBill(bill);
-    setCashReceiptNumber("");
-    try {
-      const details = await api(`/billing-ops/${bill._id}`);
-      const hasUnpaidCashAppointment = details.breakdown?.appointmentCharges?.some((charge) =>
-        charge.appointment_id?.payment_method === "Cash" && charge.appointment_id?.payment_status !== "paid",
-      );
-      setCashPayment(Boolean(hasUnpaidCashAppointment));
-      setCashAmount(String(Math.max(0, Number(bill.total_amount || bill.total || 0) - Number(bill.amount_paid || 0))));
-      setShowPayModal(true);
-    } catch (err) {
-      setError(`Failed to prepare payment: ${err.message}`);
-    }
-  };
-
-  const handleCashPay = async () => {
-    if (!selectedBill || paying) return;
-    setError("");
-    setSuccess("");
-    setPaying(true);
-    try {
-      const result = await api(`/billing-ops/${selectedBill._id}/cash-payment`, {
-        method: "POST",
-        body: JSON.stringify({ amount: Number(cashAmount), receipt_number: cashReceiptNumber }),
-      });
-      setSuccess(result.message);
-      setShowPayModal(false);
-      await loadBills();
-      await handlePrintReceipt(selectedBill._id);
-    } catch (err) {
-      setError(err.message);
-    } finally {
       setPaying(false);
     }
   };
@@ -189,7 +148,10 @@ export default function BillingView() {
                         <button
                           type="button"
                           className="inline-flex items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-                          onClick={() => openPayment(b)}
+                          onClick={() => {
+                            setSelectedBill(b);
+                            setShowPayModal(true);
+                          }}
                         >
                           <CreditCard size={13} /> Pay
                         </button>
@@ -320,19 +282,11 @@ export default function BillingView() {
               <p><strong>Total Amount Due:</strong> ₹{(selectedBill.total_amount || selectedBill.total || 0).toLocaleString()}</p>
             </div>
 
-            {cashPayment ? (
-              <div className="grid gap-3">
-                <p className="text-sm text-slate-600">This invoice includes an unpaid cash appointment. Record the cash collected and its receipt number to settle it.</p>
-                <label className="grid gap-1 text-sm font-medium">Cash amount (₹)<input type="number" min="0.01" step="0.01" value={cashAmount} onChange={(event) => setCashAmount(event.target.value)} required /></label>
-                <label className="grid gap-1 text-sm font-medium">Receipt number<input value={cashReceiptNumber} onChange={(event) => setCashReceiptNumber(event.target.value)} required /></label>
-              </div>
-            ) : (
-              <p className="text-sm text-slate-600">Pay securely by UPI, card, netbanking, or another method enabled in Razorpay. Your invoice changes to paid only after the server verifies the captured payment.</p>
-            )}
+            <p className="text-sm text-slate-600">Pay securely by UPI, card, netbanking, or another method enabled in Razorpay. Your invoice changes to paid only after the server verifies the captured payment.</p>
 
             <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
               <button type="button" className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200" onClick={() => setShowPayModal(false)}>Cancel</button>
-              <button type="button" disabled={paying || (cashPayment && (!cashReceiptNumber.trim() || Number(cashAmount) <= 0))} onClick={cashPayment ? handleCashPay : handlePay} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{paying ? (cashPayment ? "Recording payment…" : "Opening secure checkout…") : (cashPayment ? "Record cash payment" : "Continue to Razorpay")}</button>
+              <button type="button" disabled={paying} onClick={handlePay} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{paying ? "Opening secure checkout…" : "Continue to Razorpay"}</button>
             </div>
           </div>
         </div>

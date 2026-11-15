@@ -20,7 +20,6 @@ export const BillSchema = new mongoose.Schema(
     },
     payment_method: { type: String, default: "Pending" },
     paymentMethod: { type: String }, // alias
-    cash_receipt_number: { type: String, default: "" },
     razorpay_order_id: { type: String, index: true },
     razorpay_payment_id: { type: String, index: true },
     razorpay_order_amount: { type: Number, min: 0 }, // Amount in paise, as sent to Razorpay.

@@ -7,7 +7,6 @@ import {
   verifyRazorpayPayment,
   handleRazorpayWebhook,
   getBillReceipt,
-  collectCashPayment,
 } from "../controllers/billingController.js";
 
 const router = express.Router();
@@ -25,9 +24,8 @@ router.get(
   getBillById,
 );
 router.post("/razorpay-webhook", handleRazorpayWebhook);
-router.post("/:id/cash-payment", auth, roles("admin", "receptionist", "accountant"), collectCashPayment);
-router.post("/:id/razorpay/order", auth, roles("admin", "receptionist", "accountant", "patient"), createRazorpayOrder);
-router.post("/:id/razorpay/verify", auth, roles("admin", "receptionist", "accountant", "patient"), verifyRazorpayPayment);
+router.post("/:id/razorpay/order", auth, roles("admin", "accountant", "patient"), createRazorpayOrder);
+router.post("/:id/razorpay/verify", auth, roles("admin", "accountant", "patient"), verifyRazorpayPayment);
 router.get(
   "/:id/receipt",
   auth,
